@@ -32,19 +32,37 @@ Getting Started for Developers
 `Quickstart Guide <https://docs.openstack.org/horizon/latest/contributor/quickstart.html>`_
 describes how to setup Horizon development environment and start development.
 
-Building Contributor Documentation
-==================================
+Create a skeleton dashboard with panel for horizon as a plugin
+----------------------------------------------------------------
 
-This documentation is written by contributors, for contributors.
+ - ``python setupdash dashboardname panelname panelgroupname``
+ - Your dashboard + panel is ready!
 
-The source is maintained in the ``doc/source`` directory using
-`reStructuredText`_ and built by `Sphinx`_
 
-.. _reStructuredText: http://docutils.sourceforge.net/rst.html
-.. _Sphinx: http://sphinx-doc.org/
+How to install your panel?
+---------------------------
 
-To build the docs, use::
+You have two options:
 
-  $ tox -e docs
+ - ``python setup.py install``
+  - This installs the panel on the local machine, be sure to install it where you have installed horizon!
+ - Create a pypi package of your new dashboard and then install it on your horizon machine
 
-Results are in the ``doc/build/html`` directory
+
+
+options
+--------
+
+positional | explanation
+------------- | -------------
+dashboard | Dashboard name
+panel | Panel name
+groupname | Group name
+
+
+optional | explanation
+------------- | -------------
+-h, --help | show this help message and exit
+--dashboard-slug DASHBOARD_SLUG | Dashboard slug to use, defaults to the name
+--panel-slug PANEL_SLUG | Panel slug to use, defaults to the name
+
