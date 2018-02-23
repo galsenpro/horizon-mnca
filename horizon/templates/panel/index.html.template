@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% block title %}{{ panel_name|title }}{% endblock %}
+
+{% block page_header %}
+{% endblock page_header %}
+
+{% block main %}
+Welcome to panel {{ panel_name }}
+{% endblock %}

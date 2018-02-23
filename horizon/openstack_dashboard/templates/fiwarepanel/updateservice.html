@@ -1,0 +1,16 @@
+{% extends 'basetest.html' %}
+{% load i18n %}
+{% block title %}{{ panel_name|title }}{% endblock %}
+
+{% block page_header %}
+{% include "horizon/common/_page_header.html" with title=_("Fiware Services") %}
+{% endblock page_header %}
+{% block main %}
+Welcome to Fiware portal -  {{ panel_name }}
+
+<div class="row">
+
+    <h1>Update service </h1>
+    <h4 style="color: #FF0039"> {{ result }} </h4>
+</div>
+{% endblock %}

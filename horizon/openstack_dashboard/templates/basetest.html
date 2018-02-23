@@ -1,0 +1,170 @@
+{% load branding i18n %}
+{% load context_selection %}
+{% load breadcrumb_nav %}
+{% load staticfiles %}
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta content='IE=edge' http-equiv='X-UA-Compatible' />
+    <meta content='text/html; charset=utf-8' http-equiv='Content-Type' />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {% include "horizon/_custom_meta.html" %}
+    <title>{% block title %}{% endblock %} - {% site_branding %}</title>
+    {% comment %} Load CSS sheets before Javascript  {% endcomment %}
+
+    {% block css %}
+      {% include "_stylesheetstest.html" %}
+<!-- Custom fonts for this template-->
+ <link rel="stylesheet" href="{% static 'dist/jquery.bootgrid.css' %}">
+<!-- Page level plugin CSS-->
+    {% endblock %}
+
+    {% iframe_embed_settings %}
+    {% include "horizon/_conf.html" %}
+    {% include "horizon/client_side/_script_loader.html" %}
+    {% include "horizon/_custom_head_js.html" %}
+    {% block ng_route_base %} {% endblock %}
+  </head>
+
+  <body id="{% block body_id %}{% endblock %}" ng-app='horizon.app' ng-strict-di>
+    <noscript>
+      <div class="alert alert-danger text-center javascript-disabled">
+        {% trans "This application requires JavaScript to be enabled in your web browser." %}
+      </div>
+    </noscript>
+    {% block content %}
+      <div class='topbar'>
+        {% include "header/_header.html" %}
+      </div>
+      <div id='main_content'>
+        {% include "horizon/_messages.html" %}
+        {% block sidebar %}
+          {% include 'horizon/common/_sidebar.html' %}
+        {% endblock %}
+        <div id='content_body'>
+          <div class='container-fluid'>
+            <div class="row">
+              <div class="col-xs-12">
+                <div class="page-breadcrumb">
+                  {% block breadcrumb_nav %}
+                    {% breadcrumb_nav %}
+                  {% endblock %}
+                </div>
+
+                {% block page_header %}
+                  {% include "horizon/common/_page_header.html" with title=page_title %}
+                {% endblock %}
+                {% block main %}{% endblock %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endblock %}
+    <div id="footer">
+      {% block footer %}
+        {% include "_footer.html" %}
+      {% endblock %}
+    </div>
+
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+<script src="{% static 'js/jsonform/brutusin-json-forms.min.js' %}"></script>
+<script src="{% static 'js/jsonform/brutusin-json-forms-bootstrap.min.js' %}"></script>
+<script src="{% static 'lib/jquery-1.11.1.min.js' %}"></script>
+<script src="{% static 'dist/jquery.bootgrid.js' %}"></script>
+<script src="{% static 'dist/jquery.bootgrid.fa.js' %}"></script>
+<script src="{% static 'script.js' %}"></script>
+
+	<script type="text/javascript">
+         var bf = brutusin["json-forms"].create({
+  "$schema": "http://json-schema.org/draft-03/schema#",
+  "type": "object",
+  "properties": {
+	    "service": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "apikey": {
+                        "type": "string",
+                        "title": "Api Key of service",
+                        "required": true
+                    },
+                    "service": {
+                        "type": "string",
+                        "title": "Name of service",
+                        "required": true
+                    },
+                    "subservice": {
+                        "type": "string",
+                        "title": "Name of Subservice",
+                        "required": true
+                    },
+                    "entity_type": {
+                        "type": "string",
+                        "title": "Entity type",
+                        "required": true
+                    },
+                    "attributes": {
+                        "type": "array",
+                        "title": "Attributes",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "hidden",
+                                    "title": "idattribute",
+                                    "default": 1,
+                                    "required": true
+                                },
+                                "name": {
+                                    "type": "string",
+                                    "title": "Name of attribute",
+                                    "required": true
+                                },
+                                "type": {
+                                    "type": "string",
+                                    "title": "Type of attribute",
+                                    "enum": ["Number", "String", "Array"],
+                                    "required": true
+                                },
+                                "object_id": {
+                                    "type": "string",
+                                    "title": "Object Id",
+                                    "required": true
+                                }
+                            }
+                        }
+                    },
+                    "commands": {
+                        "type": "array",
+                        "title": "Commands",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "hidden",
+                                    "title": "idattribute",
+                                    "default": 1,
+                                    "required": true
+                                },
+                                "name": {
+                                    "type": "string",
+                                    "title": "Command",
+                                    "required": true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+  }
+});
+var container = document.getElementById('container');
+bf.render(container);
+    </script>
+
+  </body>
+</html>
