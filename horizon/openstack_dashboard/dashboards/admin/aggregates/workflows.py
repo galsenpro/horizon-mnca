@@ -25,10 +25,9 @@ class SetAggregateInfoAction(workflows.Action):
                            max_length=255)
 
     availability_zone = forms.CharField(label=_("Availability Zone"),
-                                        required=False,
                                         max_length=255)
 
-    class Meta(object):
+    class Meta:
         name = _("Host Aggregate Information")
         help_text = _("Host aggregates divide an availability zone into "
                       "logical units by grouping together hosts. Create a "
@@ -37,7 +36,7 @@ class SetAggregateInfoAction(workflows.Action):
 
     def clean(self):
         cleaned_data = super(SetAggregateInfoAction, self).clean()
-        name = cleaned_data.get('name', '')
+        name = cleaned_data.get('name')
 
         try:
             aggregates = api.nova.aggregate_details_list(self.request)
@@ -91,7 +90,7 @@ class AddHostsToAggregateAction(workflows.MembershipAction):
         self.fields[field_name].choices = \
             [(host_name, host_name) for host_name in host_names]
 
-    class Meta(object):
+    class Meta:
         name = _("Manage Hosts within Aggregate")
         slug = "add_host_to_aggregate"
 
@@ -131,7 +130,7 @@ class ManageAggregateHostsAction(workflows.MembershipAction):
 
         self.fields[field_name].initial = current_aggregate_hosts
 
-    class Meta(object):
+    class Meta:
         name = _("Manage Hosts within Aggregate")
 
 
@@ -181,16 +180,13 @@ class CreateAggregateWorkflow(workflows.Workflow):
     success_url = constants.AGGREGATES_INDEX_URL
     default_steps = (SetAggregateInfoStep, AddHostsToAggregateStep)
 
-    def format_status_message(self, message):
-        return message % self.context['name']
-
     def handle(self, request, context):
         try:
             self.object = \
                 api.nova.aggregate_create(
                     request,
                     name=context['name'],
-                    availability_zone=context['availability_zone'] or None)
+                    availability_zone=context['availability_zone'])
         except Exception:
             exceptions.handle(request, _('Unable to create host aggregate.'))
             return False
@@ -202,9 +198,7 @@ class CreateAggregateWorkflow(workflows.Workflow):
             except Exception:
                 exceptions.handle(
                     request, _('Error adding Hosts to the aggregate.'))
-                # Host aggregate itself has been created successfully,
-                # so we return True here
-                return True
+                return False
 
         return True
 

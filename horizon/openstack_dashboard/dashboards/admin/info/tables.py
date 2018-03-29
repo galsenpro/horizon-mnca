@@ -10,8 +10,6 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-from django.conf import settings
-from django.core import urlresolvers
 from django import template
 from django.template import defaultfilters as filters
 from django.utils.translation import pgettext_lazy
@@ -19,7 +17,6 @@ from django.utils.translation import ugettext_lazy as _
 
 from horizon import tables
 from horizon.utils import filters as utils_filters
-from openstack_dashboard import api
 
 
 SERVICE_ENABLED = "enabled"
@@ -28,11 +25,6 @@ SERVICE_DISABLED = "disabled"
 SERVICE_STATUS_DISPLAY_CHOICES = (
     (SERVICE_ENABLED, _("Enabled")),
     (SERVICE_DISABLED, _("Disabled")),
-)
-
-SERVICE_STATE_DISPLAY_CHOICES = (
-    ('up', _("Up")),
-    ('down', _("Down")),
 )
 
 
@@ -55,45 +47,41 @@ class SubServiceFilterAction(ServiceFilterAction):
     filter_field = 'binary'
 
 
-def show_endpoints(datanum):
-    if 'endpoints' in datanum:
-        template_name = 'admin/info/_cell_endpoints_v2.html'
-        context = None
-        if (len(datanum['endpoints']) > 0 and
-                "publicURL" in datanum['endpoints'][0]):
-            context = datanum['endpoints'][0]
-        else:
-            # this is a keystone v3 version of endpoints
-            template_name = 'admin/info/_cell_endpoints_v3.html'
-            context = {'endpoints': datanum['endpoints']}
-        return template.loader.render_to_string(template_name,
-                                                context)
+def get_stats(service):
+    return template.loader.render_to_string('admin/services/_stats.html',
+                                            {'service': service})
+
+
+def get_status(service):
+    # if not configured in this region, neither option makes sense
+    if service.host:
+        return SERVICE_ENABLED if not service.disabled else SERVICE_DISABLED
     return None
 
 
 class ServicesTable(tables.DataTable):
     id = tables.Column('id', hidden=True)
     name = tables.Column("name", verbose_name=_('Name'))
-    service_type = tables.Column('type', verbose_name=_('Service'))
-    region = tables.Column('region', verbose_name=_('Region'))
-    endpoints = tables.Column(show_endpoints, verbose_name=_('Endpoints'))
+    service_type = tables.Column('__unicode__', verbose_name=_('Service'))
+    host = tables.Column('host', verbose_name=_('Host'))
+    status = tables.Column(get_status,
+                           verbose_name=_('Status'),
+                           status=True,
+                           display_choices=SERVICE_STATUS_DISPLAY_CHOICES)
 
-    def get_object_id(self, datum):
-        # this method is need b/c the parent impl does not handle dicts
-        return datum.get('id')
-
-    class Meta(object):
+    class Meta:
         name = "services"
         verbose_name = _("Services")
         table_actions = (ServiceFilterAction,)
         multi_select = False
+        status_columns = ["status"]
 
 
 def get_available(zone):
     return zone.zoneState['available']
 
 
-def get_agent_status(agent):
+def get_nova_agent_status(agent):
     template_name = 'admin/info/_cell_status.html'
     context = {
         'status': agent.status,
@@ -106,9 +94,9 @@ class NovaServicesTable(tables.DataTable):
     binary = tables.Column("binary", verbose_name=_('Name'))
     host = tables.Column('host', verbose_name=_('Host'))
     zone = tables.Column('zone', verbose_name=_('Zone'))
-    status = tables.Column(get_agent_status, verbose_name=_('Status'))
+    status = tables.Column(get_nova_agent_status, verbose_name=_('Status'))
     state = tables.Column('state', verbose_name=_('State'),
-                          display_choices=SERVICE_STATE_DISPLAY_CHOICES)
+                          filters=(filters.title,))
     updated_at = tables.Column('updated_at',
                                verbose_name=pgettext_lazy(
                                    'Time since the last update',
@@ -119,7 +107,7 @@ class NovaServicesTable(tables.DataTable):
     def get_object_id(self, obj):
         return "%s-%s-%s" % (obj.binary, obj.host, obj.zone)
 
-    class Meta(object):
+    class Meta:
         name = "nova_services"
         verbose_name = _("Compute Services")
         table_actions = (SubServiceFilterAction,)
@@ -130,9 +118,10 @@ class CinderServicesTable(tables.DataTable):
     binary = tables.Column("binary", verbose_name=_('Name'))
     host = tables.Column('host', verbose_name=_('Host'))
     zone = tables.Column('zone', verbose_name=_('Zone'))
-    status = tables.Column(get_agent_status, verbose_name=_('Status'))
+    status = tables.Column('status', verbose_name=_('Status'),
+                           filters=(filters.title, ))
     state = tables.Column('state', verbose_name=_('State'),
-                          display_choices=SERVICE_STATE_DISPLAY_CHOICES)
+                          filters=(filters.title, ))
     updated_at = tables.Column('updated_at',
                                verbose_name=pgettext_lazy(
                                    'Time since the last update',
@@ -143,7 +132,7 @@ class CinderServicesTable(tables.DataTable):
     def get_object_id(self, obj):
         return "%s-%s-%s" % (obj.binary, obj.host, obj.zone)
 
-    class Meta(object):
+    class Meta:
         name = "cinder_services"
         verbose_name = _("Block Storage Services")
         table_actions = (SubServiceFilterAction,)
@@ -162,13 +151,6 @@ class NetworkAgentsFilterAction(tables.FilterAction):
         return filter(comp, agents)
 
 
-def get_network_agent_zone(agent):
-    if agent.availability_zone:
-        return agent.availability_zone
-
-    return _('-')
-
-
 def get_network_agent_status(agent):
     if agent.admin_state_up:
         return _('Enabled')
@@ -183,28 +165,10 @@ def get_network_agent_state(agent):
     return _('Down')
 
 
-class NetworkL3AgentRoutersLinkAction(tables.LinkAction):
-    name = "l3_agent_router_link"
-    verbose_name = _("View Routers")
-
-    def allowed(self, request, datum):
-        network_config = getattr(settings, 'OPENSTACK_NEUTRON_NETWORK', {})
-        if not network_config.get('enable_router', True):
-            return False
-        # Determine whether this action is allowed for the current request.
-        return datum.agent_type == "L3 agent"
-
-    def get_link_url(self, datum=None):
-        obj_id = datum.id
-        return urlresolvers.reverse("horizon:admin:routers:l3_agent_list",
-                                    args=(obj_id,))
-
-
 class NetworkAgentsTable(tables.DataTable):
     agent_type = tables.Column('agent_type', verbose_name=_('Type'))
     binary = tables.Column("binary", verbose_name=_('Name'))
     host = tables.Column('host', verbose_name=_('Host'))
-    zone = tables.Column(get_network_agent_zone, verbose_name=_('Zone'))
     status = tables.Column(get_network_agent_status, verbose_name=_('Status'))
     state = tables.Column(get_network_agent_state, verbose_name=_('State'))
     heartbeat_timestamp = tables.Column('heartbeat_timestamp',
@@ -214,25 +178,11 @@ class NetworkAgentsTable(tables.DataTable):
                                         filters=(utils_filters.parse_isotime,
                                                  filters.timesince))
 
-    def __init__(self, request, data=None, needs_form_wrapper=None, **kwargs):
-        super(NetworkAgentsTable, self).__init__(
-            request,
-            data=data,
-            needs_form_wrapper=needs_form_wrapper,
-            **kwargs)
-
-        availability_zone_supported = api.neutron.is_extension_supported(
-            request,
-            "availability_zone")
-        if not availability_zone_supported:
-            del self.columns["zone"]
-
     def get_object_id(self, obj):
         return "%s-%s" % (obj.binary, obj.host)
 
-    class Meta(object):
+    class Meta:
         name = "network_agents"
         verbose_name = _("Network Agents")
-        table_actions = (NetworkAgentsFilterAction, )
-        row_actions = (NetworkL3AgentRoutersLinkAction, )
+        table_actions = (NetworkAgentsFilterAction,)
         multi_select = False

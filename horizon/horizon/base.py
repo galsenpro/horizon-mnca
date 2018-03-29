@@ -22,55 +22,40 @@ the classes contained therein.
 
 import collections
 import copy
-from importlib import import_module
 import inspect
 import logging
 import os
 
-import django
 from django.conf import settings
 from django.conf.urls import include
+from django.conf.urls import patterns
 from django.conf.urls import url
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured  # noqa
 from django.core.urlresolvers import reverse
-from django.utils.encoding import python_2_unicode_compatible
-from django.utils.functional import empty
-from django.utils.functional import SimpleLazyObject
-from django.utils.module_loading import module_has_submodule
+from django.utils.datastructures import SortedDict
+from django.utils.functional import SimpleLazyObject  # noqa
+from django.utils.importlib import import_module  # noqa
+from django.utils.module_loading import module_has_submodule  # noqa
 from django.utils.translation import ugettext_lazy as _
-import six
 
 from horizon import conf
-from horizon.decorators import _current_component
-from horizon.decorators import require_auth
-from horizon.decorators import require_perms
+from horizon.decorators import _current_component  # noqa
+from horizon.decorators import require_auth  # noqa
+from horizon.decorators import require_perms  # noqa
 from horizon import loaders
-from horizon.utils import settings as utils_settings
 
 
-# Name of the panel group for panels to be displayed without a group.
-DEFAULT_PANEL_GROUP = 'default'
 LOG = logging.getLogger(__name__)
 
 
 def _decorate_urlconf(urlpatterns, decorator, *args, **kwargs):
     for pattern in urlpatterns:
         if getattr(pattern, 'callback', None):
-            decorated = decorator(pattern.callback, *args, **kwargs)
-            if django.VERSION >= (1, 10):
-                pattern.callback = decorated
-            else:
-                # prior to 1.10 callback was a property and we had
-                # to modify the private attribute behind the property
-                pattern._callback = decorated
+            pattern._callback = decorator(pattern.callback, *args, **kwargs)
         if getattr(pattern, 'url_patterns', []):
             _decorate_urlconf(pattern.url_patterns, decorator, *args, **kwargs)
 
 
-# FIXME(lhcheng): We need to find a better way to cache the result.
-# Rather than storing it in the session, we could leverage the Django
-# session. Currently, this has been causing issue with cookie backend,
-# adding 1600+ in the cookie size.
 def access_cached(func):
     def inner(self, context):
         session = context['request'].session
@@ -92,7 +77,6 @@ class NotRegistered(Exception):
     pass
 
 
-@python_2_unicode_compatible
 class HorizonComponent(object):
     policy_rules = None
 
@@ -102,9 +86,9 @@ class HorizonComponent(object):
             raise ImproperlyConfigured('Every %s must have a slug.'
                                        % self.__class__)
 
-    def __str__(self):
+    def __unicode__(self):
         name = getattr(self, 'name', u"Unnamed %s" % self.__class__.__name__)
-        return name
+        return unicode(name)
 
     def _get_default_urlpatterns(self):
         package_string = '.'.join(self.__module__.split('.')[:-1])
@@ -120,13 +104,10 @@ class HorizonComponent(object):
                 urls_mod = import_module('.urls', package_string)
                 urlpatterns = urls_mod.urlpatterns
             else:
-                urlpatterns = []
+                urlpatterns = patterns('')
         return urlpatterns
 
-    # FIXME(lhcheng): Removed the access_cached decorator for now until
-    # a better implementation has been figured out. This has been causing
-    # issue with cookie backend, adding 1600+ in the cookie size.
-    # @access_cached
+    @access_cached
     def can_access(self, context):
         """Return whether the user has role based access to this component.
 
@@ -145,16 +126,13 @@ class HorizonComponent(object):
         return self._can_access(context['request'])
 
     def _can_access(self, request):
-        policy_check = utils_settings.import_setting("POLICY_CHECK_FUNCTION")
+        policy_check = getattr(settings, "POLICY_CHECK_FUNCTION", None)
 
         # this check is an OR check rather than an AND check that is the
         # default in the policy engine, so calling each rule individually
         if policy_check and self.policy_rules:
             for rule in self.policy_rules:
-                rule_param = rule
-                if not any(isinstance(r, (list, tuple)) for r in rule):
-                    rule_param = (rule,)
-                if policy_check(rule_param, request):
+                if policy_check((rule,), request):
                     return True
             return False
 
@@ -264,7 +242,7 @@ class Panel(HorizonComponent):
     .. attribute:: nav
     .. method:: nav(context)
 
-        The ``nav`` attribute can be either a boolean value or a callable
+        The ``nav`` attribute can be either boolean value or a callable
         which accepts a ``RequestContext`` object as a single argument
         to control whether or not this panel should appear in
         automatically-generated navigation. Default: ``True``.
@@ -274,18 +252,6 @@ class Panel(HorizonComponent):
         The ``name`` argument for the URL pattern which corresponds to
         the index view for this ``Panel``. This is the view that
         :meth:`.Panel.get_absolute_url` will attempt to reverse.
-
-    .. staticmethod:: can_register
-
-        This optional static method can be used to specify conditions that
-        need to be satisfied to load this panel. Unlike ``permissions`` and
-        ``allowed`` this method is intended to handle settings based
-        conditions rather than user based permission and policy checks.
-        The return value is boolean. If the method returns ``True``, then the
-        panel will be registered and available to user (if ``permissions`` and
-        ``allowed`` runtime checks are also satisfied). If the method returns
-        ``False``, then the panel will not be registered and will not be
-        available via normal navigation or direct URL access.
     """
     name = ''
     slug = ''
@@ -309,8 +275,7 @@ class Panel(HorizonComponent):
         except Exception as exc:
             # Logging here since this will often be called in a template
             # where the exception would be hidden.
-            LOG.info("Error reversing absolute URL for %(self)s: %(exc)s",
-                     {'self': self, 'exc': exc})
+            LOG.info("Error reversing absolute URL for %s: %s" % (self, exc))
             raise
 
     @property
@@ -326,7 +291,6 @@ class Panel(HorizonComponent):
         return urlpatterns, self.slug, self.slug
 
 
-@six.python_2_unicode_compatible
 class PanelGroup(object):
     """A container for a set of :class:`~horizon.Panel` classes.
 
@@ -349,7 +313,7 @@ class PanelGroup(object):
     """
     def __init__(self, dashboard, slug=None, name=None, panels=None):
         self.dashboard = dashboard
-        self.slug = slug or getattr(self, "slug", DEFAULT_PANEL_GROUP)
+        self.slug = slug or getattr(self, "slug", "default")
         self.name = name or getattr(self, "name", None)
         # Our panels must be mutable so it can be extended by others.
         self.panels = list(panels or getattr(self, "panels", []))
@@ -357,7 +321,7 @@ class PanelGroup(object):
     def __repr__(self):
         return "<%s: %s>" % (self.__class__.__name__, self.slug)
 
-    def __str__(self):
+    def __unicode__(self):
         return self.name
 
     def __iter__(self):
@@ -443,10 +407,17 @@ class Dashboard(Registry, HorizonComponent):
     .. attribute:: nav
     .. method:: nav(context)
 
-        The ``nav`` attribute can be either a boolean value or a callable
+        The ``nav`` attribute can be either boolean value or a callable
         which accepts a ``RequestContext`` object as a single argument
         to control whether or not this dashboard should appear in
         automatically-generated navigation. Default: ``True``.
+
+    .. attribute:: supports_tenants
+
+        Optional boolean that indicates whether or not this dashboard includes
+        support for projects/tenants. If set to ``True`` this dashboard's
+        navigation will include a UI element that allows the user to select
+        project/tenant. Default: ``False``.
 
     .. attribute:: public
 
@@ -461,6 +432,7 @@ class Dashboard(Registry, HorizonComponent):
     panels = []
     default_panel = None
     nav = True
+    supports_tenants = False
     public = False
 
     def __repr__(self):
@@ -471,13 +443,14 @@ class Dashboard(Registry, HorizonComponent):
         self._panel_groups = None
 
     def get_panel(self, panel):
-        """Returns the Panel instance registered with this dashboard."""
+        """Returns the specified :class:`~horizon.Panel` instance registered
+        with this dashboard.
+        """
         return self._registered(panel)
 
     def get_panels(self):
-        """Returns the Panel instances registered with this dashboard in order.
-
-        Panel grouping information is not included.
+        """Returns the :class:`~horizon.Panel` instances registered with this
+        dashboard in order, without any panel groupings.
         """
         all_panels = []
         panel_groups = self.get_panel_groups()
@@ -486,11 +459,7 @@ class Dashboard(Registry, HorizonComponent):
         return all_panels
 
     def get_panel_group(self, slug):
-        """Returns the specified :class:~horizon.PanelGroup.
-
-        Returns None if not registered.
-        """
-        return self._panel_groups.get(slug)
+        return self._panel_groups[slug]
 
     def get_panel_groups(self):
         registered = copy.copy(self._registry)
@@ -511,7 +480,7 @@ class Dashboard(Registry, HorizonComponent):
                                    name=_("Other"),
                                    panels=slugs)
             panel_groups.append((new_group.slug, new_group))
-        return collections.OrderedDict(panel_groups)
+        return SortedDict(panel_groups)
 
     def get_absolute_url(self):
         """Returns the default URL for this dashboard.
@@ -525,7 +494,7 @@ class Dashboard(Registry, HorizonComponent):
         except Exception:
             # Logging here since this will often be called in a template
             # where the exception would be hidden.
-            LOG.exception("Error reversing absolute URL for %s.", self)
+            LOG.exception("Error reversing absolute URL for %s." % self)
             raise
 
     @property
@@ -540,13 +509,16 @@ class Dashboard(Registry, HorizonComponent):
                 default_panel = panel
                 continue
             url_slug = panel.slug.replace('.', '/')
-            urlpatterns.append(url(r'^%s/' % url_slug,
-                                   include(panel._decorated_urls)))
+            urlpatterns += patterns('',
+                                    url(r'^%s/' % url_slug,
+                                        include(panel._decorated_urls)))
         # Now the default view, which should come last
         if not default_panel:
             raise NotRegistered('The default panel "%s" is not registered.'
                                 % self.default_panel)
-        urlpatterns.append(url(r'', include(default_panel._decorated_urls)))
+        urlpatterns += patterns('',
+                                url(r'',
+                                    include(default_panel._decorated_urls)))
 
         # Require login if not public.
         if not self.public:
@@ -568,11 +540,10 @@ class Dashboard(Registry, HorizonComponent):
         panel_groups = []
         # If we have a flat iterable of panel names, wrap it again so
         # we have a consistent structure for the next step.
-        if all([isinstance(i, six.string_types) for i in self.panels]):
+        if all([isinstance(i, basestring) for i in self.panels]):
             self.panels = [self.panels]
 
         # Now iterate our panel sets.
-        default_created = False
         for panel_set in self.panels:
             # Instantiate PanelGroup classes.
             if not isinstance(panel_set, collections.Iterable) and \
@@ -585,15 +556,8 @@ class Dashboard(Registry, HorizonComponent):
             # Put our results into their appropriate places
             panels_to_discover.extend(panel_group.panels)
             panel_groups.append((panel_group.slug, panel_group))
-            if panel_group.slug == DEFAULT_PANEL_GROUP:
-                default_created = True
 
-        # Plugin panels can be added to a default panel group. Make sure such a
-        # default group exists.
-        if not default_created:
-            default_group = PanelGroup(self)
-            panel_groups.insert(0, (default_group.slug, default_group))
-        self._panel_groups = collections.OrderedDict(panel_groups)
+        self._panel_groups = SortedDict(panel_groups)
 
         # Do the actual discovery
         package = '.'.join(self.__module__.split('.')[:-1])
@@ -635,7 +599,7 @@ class Dashboard(Registry, HorizonComponent):
     def allowed(self, context):
         """Checks for role based access for this dashboard.
 
-        Checks for access to any panels in the dashboard and of the
+        Checks for access to any panels in the dashboard and of the the
         dashboard itself.
 
         This method should be overridden to return the result of
@@ -659,6 +623,12 @@ class Dashboard(Registry, HorizonComponent):
 
 class Workflow(object):
     pass
+
+try:
+    from django.utils.functional import empty  # noqa
+except ImportError:
+    # Django 1.3 fallback
+    empty = None
 
 
 class LazyURLPattern(SimpleLazyObject):
@@ -754,11 +724,14 @@ class Site(Registry, HorizonComponent):
                 dashboards.append(dashboard)
                 registered.pop(dashboard.__class__)
             if len(registered):
-                extra = sorted(registered.values())
+                extra = registered.values()
+                extra.sort()
                 dashboards.extend(extra)
             return dashboards
         else:
-            return sorted(self._registry.values())
+            dashboards = self._registry.values()
+            dashboards.sort()
+            return dashboards
 
     def get_default_dashboard(self):
         """Returns the default :class:`~horizon.Dashboard` instance.
@@ -799,7 +772,7 @@ class Site(Registry, HorizonComponent):
         if user_home:
             if callable(user_home):
                 return user_home(user)
-            elif isinstance(user_home, six.string_types):
+            elif isinstance(user_home, basestring):
                 # Assume we've got a URL if there's a slash in it
                 if '/' in user_home:
                     return user_home
@@ -863,8 +836,9 @@ class Site(Registry, HorizonComponent):
 
         # Compile the dynamic urlconf.
         for dash in self._registry.values():
-            urlpatterns.append(url(r'^%s/' % dash.slug,
-                                   include(dash._decorated_urls)))
+            urlpatterns += patterns('',
+                                    url(r'^%s/' % dash.slug,
+                                        include(dash._decorated_urls)))
 
         # Return the three arguments to django.conf.urls.include
         return urlpatterns, self.namespace, self.slug
@@ -902,21 +876,14 @@ class Site(Registry, HorizonComponent):
         """
         panel_customization = self._conf.get("panel_customization", [])
 
-        # Process all the panel groups first so that they exist before panels
-        # are added to them and Dashboard._autodiscover() doesn't wipe out any
-        # panels previously added when its panel groups are instantiated.
-        panel_configs = []
         for config in panel_customization:
             if config.get('PANEL'):
-                panel_configs.append(config)
+                self._process_panel_configuration(config)
             elif config.get('PANEL_GROUP'):
                 self._process_panel_group_configuration(config)
             else:
                 LOG.warning("Skipping %s because it doesn't have PANEL or "
                             "PANEL_GROUP defined.", config.__name__)
-        # Now process the panels.
-        for config in panel_configs:
-            self._process_panel_configuration(config)
 
     def _process_panel_configuration(self, config):
         """Add, remove and set default panels on the dashboard."""
@@ -946,21 +913,14 @@ class Site(Registry, HorizonComponent):
                 mod_path, panel_cls = panel_path.rsplit(".", 1)
                 try:
                     mod = import_module(mod_path)
-                except ImportError as e:
-                    LOG.warning("Could not import panel module %(module)s: "
-                                "%(exc)s", {'module': mod_path, 'exc': e})
+                except ImportError:
+                    LOG.warning("Could not load panel: %s", mod_path)
                     return
                 panel = getattr(mod, panel_cls)
-                # test is can_register method is present and call method if
-                # it is to determine if the panel should be loaded
-                if hasattr(panel, 'can_register') and \
-                   callable(getattr(panel, 'can_register')):
-                    if not panel.can_register():
-                        LOG.debug("Load condition failed for panel: %(panel)s",
-                                  {'panel': panel_slug})
-                        return
                 dashboard_cls.register(panel)
                 if panel_group:
+                    dashboard_cls.get_panel_group(panel_group).__class__.\
+                        panels.append(panel.slug)
                     dashboard_cls.get_panel_group(panel_group).\
                         panels.append(panel.slug)
                 else:
@@ -1007,10 +967,8 @@ class Site(Registry, HorizonComponent):
 
 
 class HorizonSite(Site):
-    """A singleton implementation of Site.
-
-    All dealings with horizon get the same instance no matter what.
-    There can be only one.
+    """A singleton implementation of Site such that all dealings with horizon
+    get the same instance no matter what. There can be only one.
     """
     _instance = None
 

@@ -17,6 +17,7 @@ from django.utils.translation import ugettext_lazy as _
 from horizon import exceptions
 from horizon import tables
 from horizon import tabs
+from horizon.utils import functions as utils
 
 from openstack_dashboard import api
 from openstack_dashboard.dashboards.admin.hypervisors \
@@ -28,7 +29,17 @@ from openstack_dashboard.dashboards.admin.hypervisors \
 class AdminIndexView(tabs.TabbedTableView):
     tab_group_class = project_tabs.HypervisorHostTabs
     template_name = 'admin/hypervisors/index.html'
-    page_title = _("All Hypervisors")
+
+    def get_data(self):
+        hypervisors = []
+        try:
+            hypervisors = api.nova.hypervisor_list(self.request)
+            hypervisors.sort(key=utils.natural_sort('hypervisor_hostname'))
+        except Exception:
+            exceptions.handle(self.request,
+                              _('Unable to retrieve hypervisor information.'))
+
+        return hypervisors
 
     def get_context_data(self, **kwargs):
         context = super(AdminIndexView, self).get_context_data(**kwargs)
@@ -44,29 +55,19 @@ class AdminIndexView(tabs.TabbedTableView):
 class AdminDetailView(tables.DataTableView):
     table_class = project_tables.AdminHypervisorInstancesTable
     template_name = 'admin/hypervisors/detail.html'
-    page_title = _("Servers")
 
     def get_data(self):
         instances = []
         try:
-            id, name = self.kwargs['hypervisor'].split('_', 1)
             result = api.nova.hypervisor_search(self.request,
-                                                name)
+                                                self.kwargs['hypervisor'])
             for hypervisor in result:
-                if str(hypervisor.id) == id:
-                    try:
-                        instances += hypervisor.servers
-                    except AttributeError:
-                        pass
+                try:
+                    instances += hypervisor.servers
+                except AttributeError:
+                    pass
         except Exception:
             exceptions.handle(
                 self.request,
                 _('Unable to retrieve hypervisor instances list.'))
         return instances
-
-    def get_context_data(self, **kwargs):
-        context = super(AdminDetailView, self).get_context_data(**kwargs)
-        hypervisor_name = self.kwargs['hypervisor'].split('_', 1)[1]
-        breadcrumb = [(hypervisor_name, None)]
-        context['custom_breadcrumb'] = breadcrumb
-        return context

@@ -22,7 +22,7 @@ class DeleteRouter(tables.DeleteRouter):
 
 
 class RoutersTable(tables.RoutersTable):
-    class Meta(object):
+    class Meta:
         name = "Routers"
         verbose_name = _("Routers")
         status_columns = ["status"]

@@ -12,73 +12,103 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from django.core.urlresolvers import reverse_lazy
+import logging
+
+from django.core.urlresolvers import reverse
 from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import ungettext_lazy
 
 from horizon import exceptions
 from horizon import tables
-from horizon.utils import memoized
 
 from openstack_dashboard import api
 from openstack_dashboard.dashboards.project.networks.ports import \
     tables as project_tables
-from openstack_dashboard.dashboards.project.networks.ports.tabs \
-    import PortsTab as project_port_tab
-from openstack_dashboard.usage import quotas
+from openstack_dashboard import policy
+
+LOG = logging.getLogger(__name__)
 
 
-class DeletePort(project_tables.DeletePort):
-    failure_url = "horizon:admin:networks:detail"
+class DeletePort(policy.PolicyTargetMixin, tables.DeleteAction):
+    @staticmethod
+    def action_present(count):
+        return ungettext_lazy(
+            u"Delete Port",
+            u"Delete Ports",
+            count
+        )
 
+    @staticmethod
+    def action_past(count):
+        return ungettext_lazy(
+            u"Deleted Port",
+            u"Deleted Ports",
+            count
+        )
 
-class CreatePort(project_tables.CreatePort):
-    url = "horizon:admin:networks:addport"
+    policy_rules = (("network", "delete_port"),)
 
-    def allowed(self, request, datum=None):
-        network = self.table._get_network()
-        tenant_id = network.tenant_id
-        usages = quotas.tenant_quota_usages(
-            request, tenant_id=tenant_id, targets=('port', ))
-        if usages.get('port', {}).get('available', 1) <= 0:
-            if "disabled" not in self.classes:
-                self.classes = [c for c in self.classes] + ["disabled"]
-                self.verbose_name = _("Create Port (Quota exceeded)")
-        else:
-            self.verbose_name = _("Create Port")
-            self.classes = [c for c in self.classes if c != "disabled"]
-
-        return True
-
-
-class UpdatePort(project_tables.UpdatePort):
-    url = "horizon:admin:networks:editport"
-
-
-class PortsTable(project_tables.PortsTable):
-    name = tables.WrappingColumn("name_or_id",
-                                 verbose_name=_("Name"),
-                                 link="horizon:admin:networks:ports:detail")
-    failure_url = reverse_lazy('horizon:admin:networks:index')
-
-    @memoized.memoized_method
-    def _get_network(self):
+    def delete(self, request, obj_id):
         try:
-            network_id = self.kwargs['network_id']
-            network = api.neutron.network_get(self.request, network_id)
-            network.set_id_as_name_if_empty(length=0)
-        except Exception:
-            msg = _('Unable to retrieve details for network "%s".') \
-                % (network_id)
-            exceptions.handle(self.request, msg, redirect=self.failure_url)
-        return network
+            api.neutron.port_delete(request, obj_id)
+        except Exception as e:
+            msg = _('Failed to delete port: %s') % e
+            LOG.info(msg)
+            network_id = self.table.kwargs['network_id']
+            redirect = reverse('horizon:admin:networks:detail',
+                               args=[network_id])
+            exceptions.handle(request, msg, redirect=redirect)
 
-    class Meta(object):
+
+class CreatePort(tables.LinkAction):
+    name = "create"
+    verbose_name = _("Create Port")
+    url = "horizon:admin:networks:addport"
+    classes = ("ajax-modal",)
+    icon = "plus"
+    policy_rules = (("network", "create_port"),)
+
+    def get_link_url(self, datum=None):
+        network_id = self.table.kwargs['network_id']
+        return reverse(self.url, args=(network_id,))
+
+
+class UpdatePort(policy.PolicyTargetMixin, tables.LinkAction):
+    name = "update"
+    verbose_name = _("Edit Port")
+    url = "horizon:admin:networks:editport"
+    classes = ("ajax-modal",)
+    icon = "pencil"
+    policy_rules = (("network", "update_port"),)
+
+    def get_link_url(self, port):
+        network_id = self.table.kwargs['network_id']
+        return reverse(self.url, args=(network_id, port.id))
+
+
+class PortsTable(tables.DataTable):
+    name = tables.Column("name",
+                         verbose_name=_("Name"),
+                         link="horizon:admin:networks:ports:detail")
+    fixed_ips = tables.Column(
+        project_tables.get_fixed_ips, verbose_name=_("Fixed IPs"))
+    device_id = tables.Column(
+        project_tables.get_attached, verbose_name=_("Device Attached"))
+    status = tables.Column("status", verbose_name=_("Status"))
+    admin_state = tables.Column("admin_state",
+                                verbose_name=_("Admin State"))
+    mac_state = tables.Column("mac_state", empty_value=api.neutron.OFF_STATE,
+                              verbose_name=_("Mac Learning State"))
+
+    class Meta:
         name = "ports"
         verbose_name = _("Ports")
-        table_actions = (CreatePort, DeletePort, tables.FilterAction)
+        table_actions = (CreatePort, DeletePort)
         row_actions = (UpdatePort, DeletePort,)
-        hidden_title = False
 
-
-class PortsTab(project_port_tab):
-    table_classes = (PortsTable,)
+    def __init__(self, request, data=None, needs_form_wrapper=None, **kwargs):
+        super(PortsTable, self).__init__(request, data=data,
+                                         needs_form_wrapper=needs_form_wrapper,
+                                         **kwargs)
+        if not api.neutron.is_extension_supported(request, 'mac-learning'):
+            del self.columns['mac_state']

@@ -12,24 +12,25 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from django.conf import settings
 from django.utils.translation import ugettext_lazy as _
-from openstack_auth import utils
 
 import horizon
+
+
+class SystemPanels(horizon.PanelGroup):
+    slug = "admin"
+    name = _("System")
+    panels = ('overview', 'metering', 'hypervisors', 'aggregates',
+              'instances', 'volumes', 'flavors', 'images',
+              'networks', 'routers', 'defaults', 'info')
 
 
 class Admin(horizon.Dashboard):
     name = _("Admin")
     slug = "admin"
+    panels = (SystemPanels,)
+    default_panel = 'overview'
+    permissions = ('openstack.roles.admin',)
 
-    if getattr(settings, 'POLICY_CHECK_FUNCTION', None):
-        policy_rules = (('identity', 'admin_required'),
-                        ('image', 'context_is_admin'),
-                        ('volume', 'context_is_admin'),
-                        ('compute', 'context_is_admin'),
-                        ('network', 'context_is_admin'),)
-    else:
-        permissions = (tuple(utils.get_admin_permissions()),)
 
 horizon.register(Admin)

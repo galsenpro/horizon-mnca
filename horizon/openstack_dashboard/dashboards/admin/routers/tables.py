@@ -21,6 +21,19 @@ from openstack_dashboard.dashboards.project.routers import tables as r_tables
 
 class DeleteRouter(r_tables.DeleteRouter):
     redirect_url = "horizon:admin:routers:index"
+    policy_rules = (("network", "delete_router"),)
+
+    def delete(self, request, obj_id):
+        search_opts = {'device_owner': 'network:router_interface',
+                       'device_id': obj_id}
+        ports = api.neutron.port_list(request, **search_opts)
+        for port in ports:
+            api.neutron.router_remove_interface(request, obj_id,
+                                                port_id=port.id)
+        super(DeleteRouter, self).delete(request, obj_id)
+
+    def allowed(self, request, router=None):
+        return True
 
 
 class EditRouter(r_tables.EditRouter):
@@ -35,24 +48,17 @@ class UpdateRow(tables.Row):
         return router
 
 
-class AdminRoutersFilterAction(r_tables.RoutersFilterAction):
-    name = 'filter_admin_routers'
-    filter_choices = r_tables.RoutersFilterAction.filter_choices + (
-        ('project', _("Project ="), True),)
-
-
 class RoutersTable(r_tables.RoutersTable):
     tenant = tables.Column("tenant_name", verbose_name=_("Project"))
-    name = tables.WrappingColumn("name",
-                                 verbose_name=_("Name"),
-                                 link="horizon:admin:routers:detail")
+    name = tables.Column("name",
+                         verbose_name=_("Name"),
+                         link="horizon:admin:routers:detail")
 
-    class Meta(object):
-        name = "routers"
+    class Meta:
+        name = "Routers"
         verbose_name = _("Routers")
         status_columns = ["status"]
         row_class = UpdateRow
-        table_actions = (DeleteRouter, AdminRoutersFilterAction)
+        table_actions = (DeleteRouter,)
         row_actions = (EditRouter, DeleteRouter,)
-        columns = ('tenant', 'name', 'status', 'distributed', 'ext_net',
-                   'ha', 'availability_zones', 'admin_state',)
+        Columns = ('tenant', 'name', 'status', 'distributed', 'ext_net')

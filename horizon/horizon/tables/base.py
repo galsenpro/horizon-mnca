@@ -11,24 +11,23 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-
+import pdb
 import collections
 import copy
-import inspect
 import json
 import logging
 from operator import attrgetter
 import sys
 
-from django.conf import settings
 from django.core import exceptions as core_exceptions
 from django.core import urlresolvers
 from django import forms
-from django.http import HttpResponse
+from django.http import HttpResponse  # noqa
 from django import template
-from django.template.defaultfilters import slugify
-from django.template.defaultfilters import truncatechars
+from django.template.defaultfilters import slugify  # noqa
+from django.template.defaultfilters import truncatechars  # noqa
 from django.template.loader import render_to_string
+from django.utils.datastructures import SortedDict
 from django.utils.html import escape
 from django.utils import http
 from django.utils.http import urlencode
@@ -39,10 +38,9 @@ import six
 
 from horizon import conf
 from horizon import exceptions
-from horizon.forms import ThemableCheckboxInput
 from horizon import messages
-from horizon.tables.actions import FilterAction
-from horizon.tables.actions import LinkAction
+from horizon.tables.actions import FilterAction  # noqa
+from horizon.tables.actions import LinkAction  # noqa
 from horizon.utils import html
 
 
@@ -51,7 +49,6 @@ PALETTE = termcolors.PALETTES[termcolors.DEFAULT_PALETTE]
 STRING_SEPARATOR = "__"
 
 
-@six.python_2_unicode_compatible
 class Column(html.HTMLElement):
     """A class which represents a single column in a :class:`.DataTable`.
 
@@ -112,7 +109,7 @@ class Column(html.HTMLElement):
 
             status_choices = (
                     ('enabled', True),
-                    ('true', True),
+                    ('true', True)
                     ('up', True),
                     ('active', True),
                     ('yes', True),
@@ -166,10 +163,10 @@ class Column(html.HTMLElement):
        A callable to get the HTML attributes of a column cell depending
        on the data. For example, to add additional description or help
        information for data in a column cell (e.g. in Images panel, for the
-       column 'format')::
+       column 'format'):
 
             helpText = {
-              'ARI':'Amazon Ramdisk Image',
+              'ARI':'Amazon Ramdisk Image'
               'QCOW2':'QEMU' Emulator'
               }
 
@@ -186,9 +183,9 @@ class Column(html.HTMLElement):
     .. attribute:: truncate
 
         An integer for the maximum length of the string in this column. If the
-        length of the data in this column is larger than the supplied number,
-        the data for this column will be truncated and an ellipsis will be
-        appended to the truncated data.
+        data in this column is larger than the supplied number, the data for
+        this column will be truncated and an ellipsis will be appended to the
+        truncated data.
         Defaults to ``None``.
 
     .. attribute:: link_classes
@@ -197,7 +194,7 @@ class Column(html.HTMLElement):
         is displayed as a link.
         This is left for backward compatibility. Deprecated in favor of the
         link_attributes attribute.
-        Example: ``link_classes=('link-foo', 'link-bar')``.
+        Example: ``classes=('link-foo', 'link-bar')``.
         Defaults to ``None``.
 
     .. attribute:: wrap_list
@@ -236,34 +233,6 @@ class Column(html.HTMLElement):
         ``link_attrs={"data-foo": "bar"}``.
         ``link_attrs={"target": "_blank", "class": "link-foo link-bar"}``.
         Defaults to ``None``.
-
-    .. attribute:: policy_rules
-
-        List of scope and rule tuples to do policy checks on, the
-        composition of which is (scope, rule)
-
-        * scope: service type managing the policy for action
-        * rule: string representing the action to be checked
-
-        for a policy that requires a single rule check,
-        policy_rules should look like:
-
-        .. code-block:: none
-
-            "(("compute", "compute:create_instance"),)"
-
-        for a policy that requires multiple rule checks,
-        rules should look like:
-
-        .. code-block:: none
-
-            "(("identity", "identity:list_users"),
-              ("identity", "identity:list_roles"))"
-
-    .. attribute:: help_text
-
-        A string of simple help text displayed in a tooltip when you hover
-        over the help icon beside the Column name. Defaults to ``None``.
     """
     summation_methods = {
         "sum": sum,
@@ -294,15 +263,14 @@ class Column(html.HTMLElement):
     )
 
     def __init__(self, transform, verbose_name=None, sortable=True,
-                 link=None, allowed_data_types=None, hidden=False, attrs=None,
+                 link=None, allowed_data_types=[], hidden=False, attrs=None,
                  status=False, status_choices=None, display_choices=None,
                  empty_value=None, filters=None, classes=None, summation=None,
                  auto=None, truncate=None, link_classes=None, wrap_list=False,
                  form_field=None, form_field_attributes=None,
-                 update_action=None, link_attrs=None, policy_rules=None,
-                 cell_attributes_getter=None, help_text=None):
+                 update_action=None, link_attrs=None,
+                 cell_attributes_getter=None):
 
-        allowed_data_types = allowed_data_types or []
         self.classes = list(classes or getattr(self, "classes", []))
         super(Column, self).__init__()
         self.attrs.update(attrs or {})
@@ -311,7 +279,7 @@ class Column(html.HTMLElement):
             self.transform = transform
             self.name = "<%s callable>" % transform.__name__
         else:
-            self.transform = six.text_type(transform)
+            self.transform = unicode(transform)
             self.name = self.transform
 
         # Empty string is a valid value for verbose_name
@@ -329,7 +297,7 @@ class Column(html.HTMLElement):
         self.allowed_data_types = allowed_data_types
         self.hidden = hidden
         self.status = status
-        self.empty_value = empty_value or _('-')
+        self.empty_value = empty_value or '-'
         self.filters = filters or []
         self.truncate = truncate
         self.wrap_list = wrap_list
@@ -337,8 +305,6 @@ class Column(html.HTMLElement):
         self.form_field_attributes = form_field_attributes or {}
         self.update_action = update_action
         self.link_attrs = link_attrs or {}
-        self.policy_rules = policy_rules or []
-        self.help_text = help_text
         if link_classes:
             self.link_attrs['class'] = ' '.join(link_classes)
         self.cell_attributes_getter = cell_attributes_getter
@@ -348,10 +314,9 @@ class Column(html.HTMLElement):
         self.display_choices = display_choices
 
         if summation is not None and summation not in self.summation_methods:
-            raise ValueError(
-                "Summation method %(summation)s must be one of %(keys)s.",
-                {'summation': summation,
-                 'keys': ", ".join(self.summation_methods.keys())})
+            raise ValueError("Summation method %s must be one of %s."
+                             % (summation,
+                                ", ".join(self.summation_methods.keys())))
         self.summation = summation
 
         self.creation_counter = Column.creation_counter
@@ -364,31 +329,16 @@ class Column(html.HTMLElement):
         if self.link is not None:
             self.classes.append('anchor')
 
-    def __str__(self):
-        return six.text_type(self.verbose_name)
+    def __unicode__(self):
+        return unicode(self.verbose_name)
 
     def __repr__(self):
         return '<%s: %s>' % (self.__class__.__name__, self.name)
 
-    def allowed(self, request):
-        """Determine whether processing/displaying the column is allowed.
-
-        It is determined based on the current request.
-        """
-        if not self.policy_rules:
-            return True
-
-        policy_check = getattr(settings, "POLICY_CHECK_FUNCTION", None)
-
-        if policy_check:
-            return policy_check(self.policy_rules, request)
-        return True
-
     def get_raw_data(self, datum):
-        """Returns the raw data for this column.
-
-        No filters or formatting are applied to the returned data.
-        This is useful when doing calculations on data in the table.
+        """Returns the raw data for this column, before any filters or
+        formatting are applied to it. This is useful when doing calculations
+        on data in the table.
         """
         # Callable transformations
         if callable(self.transform):
@@ -399,20 +349,25 @@ class Column(html.HTMLElement):
             data = datum.get(self.transform)
         else:
             # Basic object lookups
-            data = getattr(datum, self.transform, None)
-            if not hasattr(datum, self.transform):
-                msg = "The attribute %(attr)s doesn't exist on %(obj)s."
-                LOG.debug(termcolors.colorize(msg, **PALETTE['ERROR']),
-                          {'attr': self.transform, 'obj': datum})
+            try:
+                data = getattr(datum, self.transform)
+            except AttributeError:
+                msg = _("The attribute %(attr)s doesn't exist on "
+                        "%(obj)s.") % {'attr': self.transform, 'obj': datum}
+                msg = termcolors.colorize(msg, **PALETTE['ERROR'])
+                LOG.warning(msg)
+                data = None
         return data
 
     def get_data(self, datum):
-        """Returns the final display data for this column from the given inputs.
+        """Returns the final display data for this column from the given
+        inputs.
 
         The return value will be either the attribute specified for this column
         or the return value of the attr:`~horizon.tables.Column.transform`
         method for this column.
         """
+        #pdb.set_trace()
         datum_id = self.table.get_object_id(datum)
 
         if datum_id in self.table._data_cache[self]:
@@ -435,10 +390,9 @@ class Column(html.HTMLElement):
                 except Exception:
                     msg = ("Filter '%(filter)s' failed with data "
                            "'%(data)s' on column '%(col_name)s'")
-                    args = {'filter': filter_func.__name__,
-                            'data': data,
-                            'col_name': six.text_type(self.verbose_name)}
-                    LOG.warning(msg, args)
+                    LOG.warning(msg, {'filter': filter_func.func_name,
+                                      'data': data,
+                                      'col_name': unicode(self.verbose_name)})
 
         if data and self.truncate:
             data = truncatechars(data, self.truncate)
@@ -467,32 +421,22 @@ class Column(html.HTMLElement):
                 return None
         obj_id = self.table.get_object_id(datum)
         if callable(self.link):
-            if 'request' in inspect.getargspec(self.link).args:
-                return self.link(datum, request=self.table.request)
             return self.link(datum)
         try:
             return urlresolvers.reverse(self.link, args=(obj_id,))
         except urlresolvers.NoReverseMatch:
             return self.link
 
-    if getattr(settings, 'INTEGRATION_TESTS_SUPPORT', False):
-        def get_default_attrs(self):
-            attrs = super(Column, self).get_default_attrs()
-            attrs.update({'data-selenium': self.name})
-            return attrs
-
     def get_summation(self):
-        """Returns the summary value for the data in this column.
-
-        It returns the summary value if a valid summation method is
-        specified for it. Otherwise returns ``None``.
+        """Returns the summary value for the data in this column if a
+        valid summation method is specified for it. Otherwise returns ``None``.
         """
         if self.summation not in self.summation_methods:
             return None
 
         summation_function = self.summation_methods[self.summation]
         data = [self.get_raw_data(datum) for datum in self.table.data]
-        data = [raw_data for raw_data in data if raw_data is not None]
+        data = filter(lambda datum: datum is not None, data)
 
         if len(data):
             try:
@@ -503,14 +447,6 @@ class Column(html.HTMLElement):
             except TypeError:
                 pass
         return None
-
-
-class WrappingColumn(Column):
-    """A column that wraps its contents. Useful for data like UUIDs or names"""
-
-    def __init__(self, *args, **kwargs):
-        super(WrappingColumn, self).__init__(*args, **kwargs)
-        self.classes.append('word-break')
 
 
 class Row(html.HTMLElement):
@@ -544,7 +480,7 @@ class Row(html.HTMLElement):
 
     .. attribute:: cells
 
-        The cells belonging to this row stored in a ``OrderedDict`` object.
+        The cells belonging to this row stored in a ``SortedDict`` object.
         This attribute is populated during instantiation.
 
     .. attribute:: status
@@ -590,13 +526,10 @@ class Row(html.HTMLElement):
             self.cells = []
 
     def load_cells(self, datum=None):
-        """Load the row's data and initialize all the cells in the row.
-
-        It also set the appropriate row properties which require
+        """Load the row's data (either provided at initialization or as an
+        argument to this function), initiailize all the cells contained
+        by this row, and set the appropriate row properties which require
         the row's data to be determined.
-
-        The row's data is provided either at initialization or as an
-        argument to this function.
 
         This function is called automatically by
         :meth:`~horizon.tables.Row.__init__` if the ``datum`` argument is
@@ -615,7 +548,7 @@ class Row(html.HTMLElement):
         for column in table.columns.values():
             cell = table._meta.cell_class(datum, column, self)
             cells.append((column.name or column.auto, cell))
-        self.cells = collections.OrderedDict(cells)
+        self.cells = SortedDict(cells)
 
         if self.ajax:
             interval = conf.HORIZON_CONFIG['ajax_poll_interval']
@@ -635,11 +568,8 @@ class Row(html.HTMLElement):
 
         # Add the row's display name if available
         display_name = table.get_object_display(datum)
-        display_name_key = table.get_object_display_key(datum)
-
         if display_name:
             self.attrs['data-display'] = escape(display_name)
-            self.attrs['data-display-key'] = escape(display_name_key)
 
     def __repr__(self):
         return '<%s: %s>' % (self.__class__.__name__, self.id)
@@ -669,37 +599,26 @@ class Row(html.HTMLElement):
 
     def get_cells(self):
         """Returns the bound cells for this row in order."""
-        return list(self.cells.values())
+        return self.cells.values()
 
     def get_ajax_update_url(self):
         table_url = self.table.get_absolute_url()
-        marker_name = self.table._meta.pagination_param
-        marker = self.table.request.GET.get(marker_name, None)
-        if not marker:
-            marker_name = self.table._meta.prev_pagination_param
-            marker = self.table.request.GET.get(marker_name, None)
-        request_params = [
+        params = urlencode(SortedDict([
             ("action", self.ajax_action_name),
             ("table", self.table.name),
-            ("obj_id", self.table.get_object_id(self.datum)),
-        ]
-        if marker:
-            request_params.append((marker_name, marker))
-        params = urlencode(collections.OrderedDict(request_params))
+            ("obj_id", self.table.get_object_id(self.datum))
+        ]))
         return "%s?%s" % (table_url, params)
 
     def can_be_selected(self, datum):
-        """Determines whether the row can be selected.
-
-        By default if multiselect enabled return True.
-        You can remove the checkbox after an ajax update here if required.
+        """By default if multiselect enabled return True. You can remove the
+        checkbox after an ajax update here if required.
         """
         return True
 
     def get_data(self, request, obj_id):
-        """Fetches the updated data for the row based on the given object ID.
-
-        Must be implemented by a subclass to allow AJAX updating.
+        """Fetches the updated data for the row based on the object id
+        passed in. Must be implemented by a subclass to allow AJAX updating.
         """
         return {}
 
@@ -723,17 +642,6 @@ class Cell(html.HTMLElement):
             self.attrs['data-cell-name'] = column.name
             self.attrs['data-update-url'] = self.get_ajax_update_url()
         self.inline_edit_mod = False
-        # add tooltip to cells if the truncate variable is set
-        if column.truncate:
-            # NOTE(tsufiev): trying to pull cell raw data out of datum for
-            # those columns where truncate is False leads to multiple errors
-            # in unit tests
-            data = getattr(datum, column.name, '') or ''
-            if len(data) > column.truncate:
-                self.attrs['data-toggle'] = 'tooltip'
-                self.attrs['title'] = data
-                if getattr(settings, 'INTEGRATION_TESTS_SUPPORT', False):
-                    self.attrs['data-selenium'] = data
         self.data = self.get_data(datum, column, row)
 
     def get_data(self, datum, column, row):
@@ -742,10 +650,10 @@ class Cell(html.HTMLElement):
         if column.auto == "multi_select":
             data = ""
             if row.can_be_selected(datum):
-                widget = ThemableCheckboxInput(check_test=lambda value: False)
+                widget = forms.CheckboxInput(check_test=lambda value: False)
                 # Convert value to string to avoid accidental type conversion
                 data = widget.render('object_ids',
-                                     six.text_type(table.get_object_id(datum)),
+                                     unicode(table.get_object_id(datum)),
                                      {'class': 'table-row-multi-select'})
             table._data_cache[column][table.get_object_id(datum)] = data
         elif column.auto == "form_field":
@@ -755,7 +663,7 @@ class Cell(html.HTMLElement):
 
             widget_name = "%s__%s" % \
                 (column.name,
-                 six.text_type(table.get_object_id(datum)))
+                 unicode(table.get_object_id(datum)))
 
             # Create local copy of attributes, so it don't change column
             # class form_field_attributes
@@ -764,18 +672,12 @@ class Cell(html.HTMLElement):
             # Adding id of the input so it pairs with label correctly
             form_field_attributes['id'] = widget_name
 
-            if (template.defaultfilters.urlize in column.filters or
-                    template.defaultfilters.yesno in column.filters):
-                data = widget.render(widget_name,
-                                     column.get_raw_data(datum),
-                                     form_field_attributes)
-            else:
-                data = widget.render(widget_name,
-                                     column.get_data(datum),
-                                     form_field_attributes)
+            data = widget.render(widget_name,
+                                 column.get_data(datum),
+                                 form_field_attributes)
             table._data_cache[column][table.get_object_id(datum)] = data
         elif column.auto == "actions":
-            data = table.render_row_actions(datum)
+            data = table.render_row_actions(datum, pull_right=False)
             table._data_cache[column][table.get_object_id(datum)] = data
         else:
             data = column.get_data(datum)
@@ -792,7 +694,7 @@ class Cell(html.HTMLElement):
     @property
     def id(self):
         return ("%s__%s" % (self.column.name,
-                six.text_type(self.row.table.get_object_id(self.datum))))
+                unicode(self.row.table.get_object_id(self.datum))))
 
     @property
     def value(self):
@@ -816,14 +718,14 @@ class Cell(html.HTMLElement):
             raise six.reraise(template.TemplateSyntaxError, exc_info[1],
                               exc_info[2])
 
-        if self.url and not self.column.auto == "form_field":
+        if self.url:
             link_attrs = ' '.join(['%s="%s"' % (k, v) for (k, v) in
                                   self.column.link_attrs.items()])
             # Escape the data inside while allowing our HTML to render
             data = mark_safe('<a href="%s" %s>%s</a>' % (
                              (escape(self.url),
                               link_attrs,
-                              escape(six.text_type(data)))))
+                              escape(unicode(data)))))
         return data
 
     @property
@@ -845,10 +747,10 @@ class Cell(html.HTMLElement):
         if self.column.status or \
                 self.column.name in self.column.table._meta.status_columns:
             # returns the first matching status found
-            data_status_lower = six.text_type(
+            data_status_lower = unicode(
                 self.column.get_raw_data(self.datum)).lower()
             for status_name, status_value in self.column.status_choices:
-                if six.text_type(status_name).lower() == data_status_lower:
+                if unicode(status_name).lower() == data_status_lower:
                     self._status = status_value
                     return self._status
         self._status = None
@@ -861,7 +763,7 @@ class Cell(html.HTMLElement):
         elif status is False:
             return "status_down"
         else:
-            return "warning"
+            return "status_unknown"
 
     def get_default_classes(self):
         """Returns a flattened string of the cell's CSS classes."""
@@ -881,7 +783,7 @@ class Cell(html.HTMLElement):
     def get_ajax_update_url(self):
         column = self.column
         table_url = column.table.get_absolute_url()
-        params = urlencode(collections.OrderedDict([
+        params = urlencode(SortedDict([
             ("action", self.row.ajax_cell_action_name),
             ("table", column.table.name),
             ("cell_name", column.name),
@@ -934,11 +836,6 @@ class DataTableOptions(object):
         from this list will take precedence over actions from the
         ``table_actions`` list.
 
-    .. attribute:: table_actions_menu_label
-
-        A label of a menu button for ``table_actions_menu``. The default is
-        "Actions" or "More Actions" depending on ``table_actions``.
-
     .. attribute:: row_actions
 
         A list similar to ``table_actions`` except tailored to appear for
@@ -960,30 +857,12 @@ class DataTableOptions(object):
 
         Boolean value to control the display of the "filter" search box
         in the table actions. By default it checks whether or not an instance
-        of :class:`.FilterAction` is in ``table_actions``.
+        of :class:`.FilterAction` is in :attr:`.table_actions`.
 
     .. attribute:: template
 
         String containing the template which should be used to render the
         table. Defaults to ``"horizon/common/_data_table.html"``.
-
-    .. attribute:: row_actions_dropdown_template
-
-        String containing the template which should be used to render the
-        row actions dropdown. Defaults to
-        ``"horizon/common/_data_table_row_actions_dropdown.html"``.
-
-    .. attribute:: row_actions_row_template
-
-        String containing the template which should be used to render the
-        row actions. Defaults to
-        ``"horizon/common/_data_table_row_actions_row.html"``.
-
-    .. attribute:: table_actions_template
-
-        String containing the template which should be used to render the
-        table actions. Defaults to
-        ``"horizon/common/_data_table_table_actions.html"``.
 
     .. attribute:: context_var_name
 
@@ -1059,11 +938,6 @@ class DataTableOptions(object):
         Boolean to control whether or not to show the table's footer.
         Default: ``True``.
 
-    .. attribute:: hidden_title
-
-        Boolean to control whether or not to show the table's title.
-        Default: ``True``.
-
     .. attribute:: permissions
 
         A list of permission names which this table requires in order to be
@@ -1079,9 +953,6 @@ class DataTableOptions(object):
         self.table_actions = getattr(options, 'table_actions', [])
         self.row_actions = getattr(options, 'row_actions', [])
         self.table_actions_menu = getattr(options, 'table_actions_menu', [])
-        self.table_actions_menu_label = getattr(options,
-                                                'table_actions_menu_label',
-                                                None)
         self.cell_class = getattr(options, 'cell_class', Cell)
         self.row_class = getattr(options, 'row_class', Row)
         self.column_class = getattr(options, 'column_class', Column)
@@ -1092,7 +963,6 @@ class DataTableOptions(object):
         self.pagination_param = getattr(options, 'pagination_param', 'marker')
         self.browser_table = getattr(options, 'browser_table', None)
         self.footer = getattr(options, 'footer', True)
-        self.hidden_title = getattr(options, 'hidden_title', True)
         self.no_data_message = getattr(options,
                                        "no_data_message",
                                        _("No items to display."))
@@ -1102,7 +972,7 @@ class DataTableOptions(object):
         filter_actions = [action for action in self.table_actions if
                           issubclass(action, FilterAction)]
         if len(filter_actions) > 1:
-            raise NotImplementedError("Multiple filter actions are not "
+            raise NotImplementedError("Multiple filter actions is not "
                                       "currently supported.")
         self.filter = getattr(options, 'filter', len(filter_actions) > 0)
         if len(filter_actions) == 1:
@@ -1113,21 +983,15 @@ class DataTableOptions(object):
         self.template = getattr(options,
                                 'template',
                                 'horizon/common/_data_table.html')
-        self.row_actions_dropdown_template = \
-            getattr(options,
-                    'row_actions_dropdown_template',
-                    'horizon/common/_data_table_row_actions_dropdown.html')
-        self.row_actions_row_template = \
-            getattr(options,
-                    'row_actions_row_template',
-                    'horizon/common/_data_table_row_actions_row.html')
+        self.row_actions_dropdown_template = ('horizon/common/_data_table_'
+                                              'row_actions_dropdown.html')
+        self.row_actions_row_template = ('horizon/common/_data_table_'
+                                         'row_actions_row.html')
         self.table_actions_template = \
-            getattr(options,
-                    'table_actions_template',
-                    'horizon/common/_data_table_table_actions.html')
-        self.context_var_name = six.text_type(getattr(options,
-                                                      'context_var_name',
-                                                      'table'))
+            'horizon/common/_data_table_table_actions.html'
+        self.context_var_name = unicode(getattr(options,
+                                                'context_var_name',
+                                                'table'))
         self.actions_column = getattr(options,
                                       'actions_column',
                                       len(self.row_actions) > 0)
@@ -1148,7 +1012,7 @@ class DataTableOptions(object):
         if len(self.data_types) > 1:
             self.mixed_data_type = True
 
-        # However, if the mixed_data_type is set to True manually and
+        # However, if the mixed_data_type is set to True manually and the
         # the data_types is empty, raise an error.
         if self.mixed_data_type and len(self.data_types) <= 1:
             raise ValueError("If mixed_data_type is set to True in class %s, "
@@ -1159,46 +1023,38 @@ class DataTableOptions(object):
                                       'data_type_name',
                                       "_table_data_type")
 
-        self.filter_first_message = \
-            getattr(options,
-                    'filter_first_message',
-                    _('Please specify a search criteria first.'))
-
 
 class DataTableMetaclass(type):
     """Metaclass to add options to DataTable class and collect columns."""
     def __new__(mcs, name, bases, attrs):
         # Process options from Meta
         class_name = name
-        dt_attrs = {}
-        dt_attrs["_meta"] = opts = DataTableOptions(attrs.get("Meta", None))
+        attrs["_meta"] = opts = DataTableOptions(attrs.get("Meta", None))
 
         # Gather columns; this prevents the column from being an attribute
         # on the DataTable class and avoids naming conflicts.
         columns = []
         for attr_name, obj in attrs.items():
-            if isinstance(obj, (opts.column_class, Column)):
-                column_instance = attrs[attr_name]
+            if issubclass(type(obj), (opts.column_class, Column)):
+                column_instance = attrs.pop(attr_name)
                 column_instance.name = attr_name
                 column_instance.classes.append('normal_column')
                 columns.append((attr_name, column_instance))
-            else:
-                dt_attrs[attr_name] = obj
         columns.sort(key=lambda x: x[1].creation_counter)
 
         # Iterate in reverse to preserve final order
-        for base in reversed(bases):
+        for base in bases[::-1]:
             if hasattr(base, 'base_columns'):
-                columns[0:0] = base.base_columns.items()
-        dt_attrs['base_columns'] = collections.OrderedDict(columns)
+                columns = base.base_columns.items() + columns
+        attrs['base_columns'] = SortedDict(columns)
 
         # If the table is in a ResourceBrowser, the column number must meet
         # these limits because of the width of the browser.
         if opts.browser_table == "navigation" and len(columns) > 3:
-            raise ValueError("You can assign at most three columns to %s."
+            raise ValueError("You can only assign three column to %s."
                              % class_name)
         if opts.browser_table == "content" and len(columns) > 2:
-            raise ValueError("You can assign at most two columns to %s."
+            raise ValueError("You can only assign two columns to %s."
                              % class_name)
 
         if opts.columns:
@@ -1208,7 +1064,7 @@ class DataTableMetaclass(type):
                 if column_data[0] not in opts.columns:
                     columns.pop(columns.index(column_data))
             # Re-order based on declared columns
-            columns.sort(key=lambda x: dt_attrs['_meta'].columns.index(x[0]))
+            columns.sort(key=lambda x: attrs['_meta'].columns.index(x[0]))
         # Add in our auto-generated columns
         if opts.multi_select and opts.browser_table != "navigation":
             multi_select = opts.column_class("multi_select",
@@ -1223,7 +1079,7 @@ class DataTableMetaclass(type):
             actions_column.classes.append('actions_column')
             columns.append(("actions", actions_column))
         # Store this set of columns internally so we can copy them per-instance
-        dt_attrs['_columns'] = collections.OrderedDict(columns)
+        attrs['_columns'] = SortedDict(columns)
 
         # Gather and register actions for later access since we only want
         # to instantiate them once.
@@ -1231,18 +1087,17 @@ class DataTableMetaclass(type):
         actions = list(set(opts.row_actions) | set(opts.table_actions) |
                        set(opts.table_actions_menu))
         actions.sort(key=attrgetter('name'))
-        actions_dict = collections.OrderedDict([(action.name, action())
-                                                for action in actions])
-        dt_attrs['base_actions'] = actions_dict
+        actions_dict = SortedDict([(action.name, action())
+                                   for action in actions])
+        attrs['base_actions'] = actions_dict
         if opts._filter_action:
             # Replace our filter action with the instantiated version
             opts._filter_action = actions_dict[opts._filter_action.name]
 
         # Create our new class!
-        return type.__new__(mcs, name, bases, dt_attrs)
+        return type.__new__(mcs, name, bases, attrs)
 
 
-@six.python_2_unicode_compatible
 @six.add_metaclass(DataTableMetaclass)
 class DataTable(object):
     """A class which defines a table with all data and associated actions.
@@ -1278,17 +1133,14 @@ class DataTable(object):
         self.breadcrumb = None
         self.current_item_id = None
         self.permissions = self._meta.permissions
-        self.needs_filter_first = False
-        self._filter_first_message = self._meta.filter_first_message
 
         # Create a new set
         columns = []
         for key, _column in self._columns.items():
-            if _column.allowed(request):
-                column = copy.copy(_column)
-                column.table = self
-                columns.append((key, column))
-        self.columns = collections.OrderedDict(columns)
+            column = copy.copy(_column)
+            column.table = self
+            columns.append((key, column))
+        self.columns = SortedDict(columns)
         self._populate_data_cache()
 
         # Associate these actions with this table
@@ -1298,8 +1150,8 @@ class DataTable(object):
         self.needs_summary_row = any([col.summation
                                       for col in self.columns.values()])
 
-    def __str__(self):
-        return six.text_type(self._meta.verbose_name)
+    def __unicode__(self):
+        return unicode(self._meta.verbose_name)
 
     def __repr__(self):
         return '<%s: %s>' % (self.__class__.__name__, self._meta.name)
@@ -1327,20 +1179,17 @@ class DataTable(object):
             if self._meta.filter and self._meta._filter_action:
                 action = self._meta._filter_action
                 filter_string = self.get_filter_string()
-                filter_field = self.get_filter_field()
                 request_method = self.request.method
                 needs_preloading = (not filter_string
                                     and request_method == 'GET'
                                     and action.needs_preloading)
                 valid_method = (request_method == action.method)
-                not_api_filter = (filter_string
-                                  and not action.is_api_filter(filter_field))
-
-                if valid_method or needs_preloading or not_api_filter:
+                if valid_method or needs_preloading:
+                    filter_field = self.get_filter_field()
                     if self._meta.mixed_data_type:
                         self._filtered_data = action.data_type_filter(
                             self, self.data, filter_string)
-                    else:
+                    elif not action.is_api_filter(filter_field):
                         self._filtered_data = action.filter(
                             self, self.data, filter_string)
         return self._filtered_data
@@ -1349,11 +1198,9 @@ class DataTable(object):
         return str(slugify(self._meta.name))
 
     def get_filter_string(self):
-        """Get the filter string value.
-
-        For 'server' type filters this is saved in the session so that
-        it gets persisted across table loads.  For other filter types
-        this is obtained from the POST dict.
+        """Get the filter string value. For 'server' type filters this is
+        saved in the session so that it gets persisted across table loads.
+        For other filter types this is obtained from the POST dict.
         """
         filter_action = self._meta._filter_action
         param_name = filter_action.get_param_name()
@@ -1365,9 +1212,8 @@ class DataTable(object):
         return filter_string
 
     def get_filter_field(self):
-        """Get the filter field value used for 'server' type filters.
-
-        This is the value from the filter action's list of filter choices.
+        """Get the filter field value used for 'server' type filters. This
+        is the value from the filter action's list of filter choices.
         """
         filter_action = self._meta._filter_action
         param_name = '%s_field' % filter_action.get_param_name()
@@ -1387,10 +1233,6 @@ class DataTable(object):
             if self._meta.mixed_data_type:
                 row_matched = action.data_type_matched(datum)
             return action._allowed(request, datum) and row_matched
-        except AssertionError:
-            # don't trap mox exceptions (which subclass AssertionError)
-            # when testing!
-            raise
         except Exception:
             LOG.exception("Error while checking action permissions.")
             return None
@@ -1403,9 +1245,9 @@ class DataTable(object):
     def render(self):
         """Renders the table using the template from the table options."""
         table_template = template.loader.get_template(self._meta.template)
-        extra_context = {self._meta.context_var_name: self,
-                         'hidden_title': self._meta.hidden_title}
-        return table_template.render(extra_context, self.request)
+        extra_context = {self._meta.context_var_name: self}
+        context = template.RequestContext(self.request, extra_context)
+        return table_template.render(context)
 
     def get_absolute_url(self):
         """Returns the canonical URL for this table.
@@ -1434,37 +1276,23 @@ class DataTable(object):
         """Returns the message to be displayed when there is no data."""
         return self._no_data_message
 
-    def get_filter_first_message(self):
-        """Return the message to be displayed first in the filter.
-
-        when the user needs to provide a search criteria first
-        before loading any data.
-        """
-        return self._filter_first_message
-
     def get_object_by_id(self, lookup):
-        """Returns the data object whose ID matches ``loopup`` parameter.
-
-        The data object is looked up from the table's dataset and
-        the data which matches the ``lookup`` parameter specified.
-        An error will be raised if the match is not a single data object.
+        """Returns the data object from the table's dataset which matches
+        the ``lookup`` parameter specified. An error will be raised if
+        the match is not a single data object.
 
         We will convert the object id and ``lookup`` to unicode before
         comparison.
 
         Uses :meth:`~horizon.tables.DataTable.get_object_id` internally.
         """
-        if not isinstance(lookup, six.text_type):
-            lookup = str(lookup)
-            if six.PY2:
-                lookup = lookup.decode('utf-8')
+        if not isinstance(lookup, unicode):
+            lookup = unicode(str(lookup), 'utf-8')
         matches = []
         for datum in self.data:
             obj_id = self.get_object_id(datum)
-            if not isinstance(obj_id, six.text_type):
-                obj_id = str(obj_id)
-                if six.PY2:
-                    obj_id = obj_id.decode('utf-8')
+            if not isinstance(obj_id, unicode):
+                obj_id = unicode(str(obj_id), 'utf-8')
             if obj_id == lookup:
                 matches.append(datum)
         if len(matches) > 1:
@@ -1478,9 +1306,8 @@ class DataTable(object):
 
     @property
     def has_actions(self):
-        """Indicates whether there are any available actions on this table.
-
-        Returns a boolean value.
+        """Boolean. Indicates whether there are any available actions on this
+        table.
         """
         if not self.base_actions:
             return False
@@ -1488,9 +1315,8 @@ class DataTable(object):
 
     @property
     def needs_form_wrapper(self):
-        """Returns if this table should be rendered wrapped in a ``<form>`` tag.
-
-        Returns a boolean value.
+        """Boolean. Indicates whether this table should be rendered wrapped in
+        a ``<form>`` tag or not.
         """
         # If needs_form_wrapper is explicitly set, defer to that.
         if self._needs_form_wrapper is not None:
@@ -1534,7 +1360,7 @@ class DataTable(object):
         """hide checkbox column if no current table action is allowed."""
         if not self.multi_select:
             return
-        select_column = list(self.columns.values())[0]
+        select_column = self.columns.values()[0]
         # Try to find if the hidden class need to be
         # removed or added based on visible flag.
         hidden_found = 'hidden' in select_column.classes
@@ -1550,6 +1376,7 @@ class DataTable(object):
         bound_actions = self.get_table_actions()
         extra_context = {"table_actions": bound_actions,
                          "table_actions_buttons": [],
+                         "slug": self.slugify_name(),
                          "table_actions_menu": []}
         if self._meta.filter and (
                 self._filter_action(self._meta._filter_action, self.request)):
@@ -1559,17 +1386,13 @@ class DataTable(object):
                 extra_context['table_actions_menu'].append(action)
             elif action != extra_context.get('filter'):
                 extra_context['table_actions_buttons'].append(action)
-        if self._meta.table_actions_menu_label:
-            extra_context['table_actions_menu_label'] = \
-                self._meta.table_actions_menu_label
+        context = template.RequestContext(self.request, extra_context)
         self.set_multiselect_column_visibility(len(bound_actions) > 0)
-        return table_actions_template.render(extra_context, self.request)
+        return table_actions_template.render(context)
 
-    def render_row_actions(self, datum, row=False):
-        """Renders the actions specified in ``Meta.row_actions``.
-
-        The actions are rendered using the current row data.
-        If `row` is True, the actions are rendered in a row
+    def render_row_actions(self, datum, pull_right=True, row=False):
+        """Renders the actions specified in ``Meta.row_actions`` using the
+        current row data. If `row` is True, the actions are rendered in a row
         of buttons. Otherwise they are rendered in a dropdown box.
         """
         if row:
@@ -1580,34 +1403,34 @@ class DataTable(object):
         row_actions_template = template.loader.get_template(template_path)
         bound_actions = self.get_row_actions(datum)
         extra_context = {"row_actions": bound_actions,
-                         "row_id": self.get_object_id(datum)}
-        return row_actions_template.render(extra_context, self.request)
+                         "row_id": self.get_object_id(datum),
+                         "pull_right": pull_right}
+        context = template.RequestContext(self.request, extra_context)
+        return row_actions_template.render(context)
 
     @staticmethod
     def parse_action(action_string):
-        """Parses the ``action_string`` parameter sent back with the POST data.
-
-        By default this parses a string formatted as
+        """Parses the ``action`` parameter (a string) sent back with the
+        POST data. By default this parses a string formatted as
         ``{{ table_name }}__{{ action_name }}__{{ row_id }}`` and returns
         each of the pieces. The ``row_id`` is optional.
         """
         if action_string:
             bits = action_string.split(STRING_SEPARATOR)
-            table = bits[0]
-            action = bits[1]
+            bits.reverse()
+            table = bits.pop()
+            action = bits.pop()
             try:
-                object_id = STRING_SEPARATOR.join(bits[2:])
-                if object_id == '':
-                    object_id = None
+                object_id = bits.pop()
             except IndexError:
                 object_id = None
             return table, action, object_id
 
     def take_action(self, action_name, obj_id=None, obj_ids=None):
-        """Locates the appropriate action and routes the object data to it.
-
-        The action should return an HTTP redirect if successful,
-        or a value which evaluates to ``False`` if unsuccessful.
+        """Locates the appropriate action and routes the object
+        data to it. The action should return an HTTP redirect
+        if successful, or a value which evaluates to ``False``
+        if unsuccessful.
         """
         # See if we have a list of ids
         obj_ids = obj_ids or self.request.POST.getlist('object_ids')
@@ -1652,10 +1475,8 @@ class DataTable(object):
         return table, action, obj_id
 
     def maybe_preempt(self):
-        """Determine whether the request should be handled in earlier phase.
-
-        It determines the request should be handled by a preemptive action
-        on this table or by an AJAX row update before loading any data.
+        """Determine whether the request should be handled by a preemptive
+        action on this table or by an AJAX row update before loading any data.
         """
         request = self.request
         table_name, action_name, obj_id = self.check_handler(request)
@@ -1720,9 +1541,10 @@ class DataTable(object):
 
             # If not allowed, neither edit mod or updating is allowed.
             if not cell.update_allowed:
-                datum_display = (self.get_object_display(datum) or "N/A")
-                LOG.info('Permission denied to Update Action: "%s"',
-                         datum_display)
+                datum_display = (self.get_object_display(datum) or
+                                 _("N/A"))
+                LOG.info('Permission denied to %s: "%s"' %
+                         ("Update Action", datum_display))
                 return HttpResponse(status=401)
             # If it is post request, we are updating the cell.
             if request.method == "POST":
@@ -1743,7 +1565,8 @@ class DataTable(object):
                 return HttpResponse(status=error.status_code)
 
     def inline_update_action(self, request, datum, cell, obj_id, cell_name):
-        """Handling update by POST of the cell."""
+        """Handling update by POST of the cell.
+        """
         new_cell_value = request.POST.get(
             cell_name + '__' + obj_id, None)
         if issubclass(cell.column.form_field.__class__,
@@ -1779,9 +1602,7 @@ class DataTable(object):
                     content_type="application/json")
 
     def maybe_handle(self):
-        """Handles table actions if needed.
-
-        It determines whether the request should be handled by any action on
+        """Determine whether the request should be handled by any action on
         this table after data has been loaded.
         """
         request = self.request
@@ -1795,10 +1616,8 @@ class DataTable(object):
         return None
 
     def sanitize_id(self, obj_id):
-        """Override to modify an incoming obj_id to match existing API.
-
-        It is used to modify an incoming obj_id (used in Horizon)
-        to the data type or format expected by the API.
+        """Override to modify an incoming obj_id to match existing
+        API data types or modify the format.
         """
         return obj_id
 
@@ -1815,23 +1634,19 @@ class DataTable(object):
         """
         return datum.id
 
-    def get_object_display_key(self, datum):
-        return 'name'
-
     def get_object_display(self, datum):
         """Returns a display name that identifies this object.
 
         By default, this returns a ``name`` attribute from the given object,
         but this can be overridden to return other values.
         """
-        display_key = self.get_object_display_key(datum)
-        return getattr(datum, display_key, None)
+        if hasattr(datum, 'name'):
+            return datum.name
+        return None
 
     def has_prev_data(self):
-        """Returns a boolean value indicating whether there is previous data.
-
-        Returns True if there is previous data available to this table
-        from the source (generally an API).
+        """Returns a boolean value indicating whether there is previous data
+        available to this table from the source (generally an API).
 
         The method is largely meant for internal use, but if you want to
         override it to provide custom behavior you can do so at your own risk.
@@ -1839,10 +1654,8 @@ class DataTable(object):
         return self._meta.has_prev_data
 
     def has_more_data(self):
-        """Returns a boolean value indicating whether there is more data.
-
-        Returns True if there is more data available to this table
-        from the source (generally an API).
+        """Returns a boolean value indicating whether there is more data
+        available to this table from the source (generally an API).
 
         The method is largely meant for internal use, but if you want to
         override it to provide custom behavior you can do so at your own risk.
@@ -1850,35 +1663,35 @@ class DataTable(object):
         return self._meta.has_more_data
 
     def get_prev_marker(self):
-        """Returns the identifier for the first object in the current data set.
-
-        The return value will be used as marker/limit-based paging in the API.
+        """Returns the identifier for the first object in the current data set
+        for APIs that use marker/limit-based paging.
         """
         return http.urlquote_plus(self.get_object_id(self.data[0])) \
             if self.data else ''
 
     def get_marker(self):
-        """Returns the identifier for the last object in the current data set.
-
-        The return value will be used as marker/limit-based paging in the API.
+        """Returns the identifier for the last object in the current data set
+        for APIs that use marker/limit-based paging.
         """
         return http.urlquote_plus(self.get_object_id(self.data[-1])) \
             if self.data else ''
 
     def get_prev_pagination_string(self):
-        """Returns the query parameter string to paginate to the prev page."""
+        """Returns the query parameter string to paginate this table
+        to the previous page.
+        """
         return "=".join([self._meta.prev_pagination_param,
                          self.get_prev_marker()])
 
     def get_pagination_string(self):
-        """Returns the query parameter string to paginate to the next page."""
+        """Returns the query parameter string to paginate this table
+        to the next page.
+        """
         return "=".join([self._meta.pagination_param, self.get_marker()])
 
     def calculate_row_status(self, statuses):
-        """Returns a boolean value determining the overall row status.
-
-        It is detremined based on the dictionary of column name
-        to status mappings passed in.
+        """Returns a boolean value determining the overall row status
+        based on the dictionary of column name to status mappings passed in.
 
         By default, it uses the following logic:
 
@@ -1903,17 +1716,16 @@ class DataTable(object):
             return True
 
     def get_row_status_class(self, status):
-        """Returns a css class name determined by the status value.
-
-        This class name is used to indicate the status of the rows in the table
-        if any ``status_columns`` have been specified.
+        """Returns a css class name determined by the status value. This class
+        name is used to indicate the status of the rows in the table if
+        any ``status_columns`` have been specified.
         """
         if status is True:
             return "status_up"
         elif status is False:
             return "status_down"
         else:
-            return "warning"
+            return "status_unknown"
 
     def get_columns(self):
         """Returns this table's columns including auto-generated ones."""

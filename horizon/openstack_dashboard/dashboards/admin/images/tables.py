@@ -14,7 +14,6 @@
 
 from django.utils.translation import ugettext_lazy as _
 
-from horizon import exceptions
 from horizon import tables
 
 from openstack_dashboard import api
@@ -42,21 +41,11 @@ class AdminEditImage(project_tables.EditImage):
 
 
 class UpdateMetadata(tables.LinkAction):
+    url = "horizon:admin:images:update_metadata"
     name = "update_metadata"
     verbose_name = _("Update Metadata")
-    ajax = False
+    classes = ("ajax-modal",)
     icon = "pencil"
-    attrs = {"ng-controller": "MetadataModalHelperController as modal"}
-
-    def __init__(self, attrs=None, **kwargs):
-        kwargs['preempt'] = True
-        super(UpdateMetadata, self).__init__(attrs, **kwargs)
-
-    def get_link_url(self, datum):
-        image_id = self.table.get_object_id(datum)
-        self.attrs['ng-click'] = (
-            "modal.openMetadataModal('image', '%s', true)" % image_id)
-        return "javascript:void(0);"
 
 
 class UpdateRow(tables.Row):
@@ -64,15 +53,6 @@ class UpdateRow(tables.Row):
 
     def get_data(self, request, image_id):
         image = api.glance.image_get(request, image_id)
-        try:
-            tenant_id = getattr(image, "owner")
-            tenant = api.keystone.tenant_get(request, tenant_id)
-            image.tenant_name = getattr(tenant, "name")
-        except Exception:
-            msg = _('Unable to retrieve the project '
-                    'information of the image.')
-            exceptions.handle(request, msg)
-
         return image
 
 
@@ -81,18 +61,16 @@ class AdminImageFilterAction(tables.FilterAction):
     filter_choices = (('name', _("Image Name ="), True),
                       ('status', _('Status ='), True),
                       ('disk_format', _('Format ='), True),
-                      ('size_min', _('Min. Size (MB) ='), True),
-                      ('size_max', _('Max. Size (MB) ='), True))
+                      ('size_min', _('Min. Size (MB)'), True),
+                      ('size_max', _('Max. Size (MB)'), True))
 
 
 class AdminImagesTable(project_tables.ImagesTable):
-    name = tables.WrappingColumn(project_tables.get_image_name,
-                                 link="horizon:admin:images:detail",
-                                 verbose_name=_("Image Name"))
-    tenant = tables.Column(lambda obj: getattr(obj, 'tenant_name', obj.owner),
-                           verbose_name=_("Project"))
+    name = tables.Column("name",
+                         link="horizon:admin:images:detail",
+                         verbose_name=_("Image Name"))
 
-    class Meta(object):
+    class Meta:
         name = "images"
         row_class = UpdateRow
         status_columns = ["status"]
@@ -100,5 +78,3 @@ class AdminImagesTable(project_tables.ImagesTable):
         table_actions = (AdminCreateImage, AdminDeleteImage,
                          AdminImageFilterAction)
         row_actions = (AdminEditImage, UpdateMetadata, AdminDeleteImage)
-        columns = ('tenant', 'name', 'image_type', 'status', 'public',
-                   'protected', 'disk_format', 'size')

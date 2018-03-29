@@ -15,10 +15,13 @@
 from django.utils.translation import ugettext_lazy as _
 
 import horizon
+from openstack_dashboard.dashboards.admin import dashboard
 
 
 class Hypervisors(horizon.Panel):
     name = _("Hypervisors")
     slug = 'hypervisors'
-    permissions = ('openstack.services.compute',)
-    policy_rules = (("compute", "os_compute_api:os-hypervisors"),)
+    permissions = ('openstack.roles.admin', 'openstack.services.compute')
+
+
+dashboard.Admin.register(Hypervisors)

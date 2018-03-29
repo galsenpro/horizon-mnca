@@ -16,14 +16,12 @@ import logging
 
 from django.conf import settings
 from django.core.urlresolvers import reverse
-from django.template import defaultfilters as filters
 from django.utils.http import urlencode
 from django.utils.translation import ugettext_lazy as _
 from django.utils.translation import ungettext_lazy
 
-from keystoneclient import exceptions as keystoneclient_exceptions
+from keystoneclient import exceptions
 
-from horizon import exceptions
 from horizon import messages
 from horizon import tables
 
@@ -37,10 +35,12 @@ LOG = logging.getLogger(__name__)
 
 class UpdateUsersLink(tables.LinkAction):
     name = "users"
-    verbose_name = _("Manage Members")
+    verbose_name = _("Modify Users")
     url = "horizon:identity:domains:update"
     classes = ("ajax-modal",)
-    policy_rules = (("identity", "identity:update_domain"),)
+    policy_rules = (("identity", "identity:list_users"),
+                    ("identity", "identity:list_roles"),
+                    ("identity", "identity:list_role_assignments"))
 
     def get_link_url(self, domain):
         step = 'update_user_members'
@@ -55,7 +55,6 @@ class UpdateGroupsLink(tables.LinkAction):
     url = "horizon:identity:domains:update"
     classes = ("ajax-modal",)
     icon = "pencil"
-    policy_rules = (("identity", "identity:update_domain"),)
 
     def get_link_url(self, domain):
         step = 'update_group_members'
@@ -105,6 +104,7 @@ class DeleteDomainsAction(tables.DeleteAction):
             count
         )
 
+    name = "delete"
     policy_rules = (('identity', 'identity:delete_domain'),)
 
     def allowed(self, request, datum):
@@ -116,90 +116,10 @@ class DeleteDomainsAction(tables.DeleteAction):
             msg = _('Domain "%s" must be disabled before it can be deleted.') \
                 % domain.name
             messages.error(request, msg)
-            raise keystoneclient_exceptions.ClientException(409, msg)
+            raise exceptions.ClientException(409, msg)
         else:
-            LOG.info('Deleting domain "%s".', obj_id)
+            LOG.info('Deleting domain "%s".' % obj_id)
             api.keystone.domain_delete(request, obj_id)
-
-
-class DisableDomainsAction(tables.BatchAction):
-    @staticmethod
-    def action_present(count):
-        return ungettext_lazy(
-            u"Disable Domain",
-            u"Disable Domains",
-            count
-        )
-
-    @staticmethod
-    def action_past(count):
-        return ungettext_lazy(
-            u"Disabled Domain",
-            u"Disabled Domains",
-            count
-        )
-
-    name = "disable"
-    policy_rules = (('identity', 'identity:update_domain'),)
-    verbose_name = _("Disable Domains")
-
-    def allowed(self, request, datum):
-        return api.keystone.keystone_can_edit_domain() \
-            and (datum is None or datum.enabled)
-
-    def action(self, request, obj_id):
-        domain = self.table.get_object_by_id(obj_id)
-        if domain.enabled:
-            LOG.info('Disabling domain "%s".', obj_id)
-            try:
-                api.keystone.domain_update(request,
-                                           domain_id=domain.id,
-                                           name=domain.name,
-                                           description=domain.description,
-                                           enabled=False)
-            except Exception:
-                exceptions.handle(request, ignore=True)
-                return False
-
-
-class EnableDomainsAction(tables.BatchAction):
-    @staticmethod
-    def action_present(count):
-        return ungettext_lazy(
-            u"Enable Domain",
-            u"Enable Domains",
-            count
-        )
-
-    @staticmethod
-    def action_past(count):
-        return ungettext_lazy(
-            u"Enabled Domain",
-            u"Enabled Domains",
-            count
-        )
-
-    name = "enable"
-    policy_rules = (('identity', 'identity:update_domain'),)
-    verbose_name = _("Enable Domains")
-
-    def allowed(self, request, datum):
-        return api.keystone.keystone_can_edit_domain() \
-            and (datum is None or not datum.enabled)
-
-    def action(self, request, obj_id):
-        domain = self.table.get_object_by_id(obj_id)
-        if not domain.enabled:
-            LOG.info('Enabling domain "%s".', obj_id)
-            try:
-                api.keystone.domain_update(request,
-                                           domain_id=domain.id,
-                                           name=domain.name,
-                                           description=domain.description,
-                                           enabled=True)
-            except Exception:
-                exceptions.handle(request, ignore=True)
-                return False
 
 
 class DomainFilterAction(tables.FilterAction):
@@ -226,7 +146,7 @@ class SetDomainContext(tables.Action):
     verbose_name = _("Set Domain Context")
     url = constants.DOMAINS_INDEX_URL
     preempt = True
-    policy_rules = (('identity', 'identity:update_domain'),)
+    policy_rules = (('identity', 'admin_required'),)
 
     def allowed(self, request, datum):
         multidomain_support = getattr(settings,
@@ -261,7 +181,7 @@ class UnsetDomainContext(tables.Action):
     url = constants.DOMAINS_INDEX_URL
     preempt = True
     requires_input = False
-    policy_rules = (('identity', 'identity:update_domain'),)
+    policy_rules = (('identity', 'admin_required'),)
 
     def allowed(self, request, datum):
         ctx = request.session.get("domain_context", None)
@@ -275,19 +195,16 @@ class UnsetDomainContext(tables.Action):
 
 
 class DomainsTable(tables.DataTable):
-    name = tables.WrappingColumn('name', verbose_name=_('Name'))
+    name = tables.Column('name', verbose_name=_('Name'))
     description = tables.Column(lambda obj: getattr(obj, 'description', None),
                                 verbose_name=_('Description'))
     id = tables.Column('id', verbose_name=_('Domain ID'))
-    enabled = tables.Column('enabled', verbose_name=_('Enabled'), status=True,
-                            filters=(filters.yesno, filters.capfirst))
+    enabled = tables.Column('enabled', verbose_name=_('Enabled'), status=True)
 
-    class Meta(object):
+    class Meta:
         name = "domains"
         verbose_name = _("Domains")
-        table_actions_menu = (EnableDomainsAction, DisableDomainsAction)
         row_actions = (SetDomainContext, UpdateUsersLink, UpdateGroupsLink,
-                       EditDomainLink, EnableDomainsAction,
-                       DisableDomainsAction, DeleteDomainsAction)
+                       EditDomainLink, DeleteDomainsAction)
         table_actions = (DomainFilterAction, CreateDomainLink,
                          DeleteDomainsAction, UnsetDomainContext)

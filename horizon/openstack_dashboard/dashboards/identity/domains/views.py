@@ -28,32 +28,32 @@ from openstack_dashboard.dashboards.identity.domains \
     import tables as project_tables
 from openstack_dashboard.dashboards.identity.domains \
     import workflows as project_workflows
-from openstack_dashboard.utils import identity
 
 
 class IndexView(tables.DataTableView):
     table_class = project_tables.DomainsTable
     template_name = constants.DOMAINS_INDEX_VIEW_TEMPLATE
-    page_title = _("Domains")
 
     def get_data(self):
         domains = []
-        domain_context = self.request.session.get('domain_context')
-
-        if policy.check((
-            ("identity", "identity:list_domains"),
-        ), self.request) and not domain_context:
+        domain_context = self.request.session.get('domain_context', None)
+        if policy.check((("identity", "identity:list_domains"),),
+                        self.request):
             try:
-                domains = api.keystone.domain_list(self.request)
+                if domain_context:
+                    domain = api.keystone.domain_get(self.request,
+                                                     domain_context)
+                    domains.append(domain)
+                else:
+                    domains = api.keystone.domain_list(self.request)
             except Exception:
                 exceptions.handle(self.request,
                                   _('Unable to retrieve domain list.'))
-        elif policy.check((
-            ("identity", "identity:get_domain"),
-        ), self.request):
+        elif policy.check((("identity", "identity:get_domain"),),
+                          self.request):
             try:
-                domain_id = identity.get_domain_id_for_operation(self.request)
-                domain = api.keystone.domain_get(self.request, domain_id)
+                domain = api.keystone.domain_get(self.request,
+                                                 self.request.user.domain_id)
                 domains.append(domain)
             except Exception:
                 exceptions.handle(self.request,

@@ -10,28 +10,36 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+from django.conf.urls import include
+from django.conf.urls import patterns
 from django.conf.urls import url
 
+from openstack_dashboard.dashboards.admin.volumes.snapshots \
+    import urls as snapshot_urls
 from openstack_dashboard.dashboards.admin.volumes import views
+from openstack_dashboard.dashboards.admin.volumes.volume_types \
+    import urls as volume_types_urls
+from openstack_dashboard.dashboards.admin.volumes.volumes \
+    import urls as volumes_urls
 
-
-urlpatterns = [
+urlpatterns = patterns(
+    '',
     url(r'^$',
-        views.VolumesView.as_view(),
+        views.IndexView.as_view(),
         name='index'),
-    url(r'^manage/$',
-        views.ManageVolumeView.as_view(),
-        name='manage'),
-    url(r'^(?P<volume_id>[^/]+)/$',
-        views.DetailView.as_view(),
-        name='detail'),
-    url(r'^(?P<volume_id>[^/]+)/update_status$',
-        views.UpdateStatusView.as_view(),
-        name='update_status'),
-    url(r'^(?P<volume_id>[^/]+)/unmanage$',
-        views.UnmanageVolumeView.as_view(),
-        name='unmanage'),
-    url(r'^(?P<volume_id>[^/]+)/migrate$',
-        views.MigrateVolumeView.as_view(),
-        name='migrate'),
-]
+    url(r'^\?tab=volumes_group_tabs__snapshots_tab$',
+        views.IndexView.as_view(),
+        name='snapshots_tab'),
+    url(r'^\?tab=volumes_group_tabs__volumes_tab$',
+        views.IndexView.as_view(),
+        name='volumes_tab'),
+    url(r'^\?tab=volumes_group_tabs__volume_types_tab$',
+        views.IndexView.as_view(),
+        name='volume_types_tab'),
+    url(r'',
+        include(volumes_urls, namespace='volumes')),
+    url(r'volume_types/',
+        include(volume_types_urls, namespace='volume_types')),
+    url(r'snapshots/',
+        include(snapshot_urls, namespace='snapshots')),
+)

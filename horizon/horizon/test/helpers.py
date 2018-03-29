@@ -20,43 +20,37 @@ import logging
 import os
 import socket
 import time
-import unittest
 
-from django.contrib.auth.middleware import AuthenticationMiddleware
-from django.contrib.auth.models import Permission
-from django.contrib.auth.models import User
-from django.contrib.contenttypes.models import ContentType
-from django.contrib.messages.storage import default_storage
-from django.contrib.sessions.backends.base import SessionBase
+from django.contrib.auth.middleware import AuthenticationMiddleware  # noqa
+from django.contrib.auth.models import Permission  # noqa
+from django.contrib.auth.models import User  # noqa
+from django.contrib.contenttypes.models import ContentType  # noqa
+from django.contrib.messages.storage import default_storage  # noqa
+from django.contrib.sessions.backends.base import SessionBase  # noqa
 from django.core.handlers import wsgi
 from django import http
 from django import test as django_test
-from django.test.client import RequestFactory
+from django.test.client import RequestFactory  # noqa
 from django.utils.encoding import force_text
-import six
-
-from django.contrib.staticfiles.testing \
-    import StaticLiveServerTestCase as LiveServerTestCase
+from django.utils import unittest
 
 LOG = logging.getLogger(__name__)
 
 
-# NOTE: Several distributions can't ship Selenium, or the Firefox
-# component of it, due to its non-free license. So they have to patch
-# it out of test-requirements.txt Avoid import failure and force not
-# running selenium tests if we attempt to run selenium tests using the
-# Firefox driver and it is not available.
 try:
     from selenium.webdriver.support import ui as selenium_ui
     import xvfbwrapper  # Only needed when running the Selenium tests headless
 
-    from horizon.test.webdriver import WebDriver
+    from horizon.test.webdriver import WebDriver  # noqa
 except ImportError as e:
-    LOG.warning("%s, force WITH_SELENIUM=False", e)
+    # NOTE(saschpe): Several distribution can't ship selenium due to its
+    # non-free license. So they have to patch it out of test-requirements.txt
+    # Avoid import failure and force not running selenium tests.
+    LOG.warning("{0}, force WITH_SELENIUM=False".format(str(e)))
     os.environ['WITH_SELENIUM'] = ''
 
 
-from mox3 import mox
+import mox
 
 from horizon import middleware
 
@@ -115,7 +109,8 @@ class RequestFactoryWithMessages(RequestFactory):
 @unittest.skipIf(os.environ.get('SKIP_UNITTESTS', False),
                  "The SKIP_UNITTESTS env variable is set.")
 class TestCase(django_test.TestCase):
-    """Base test case class for Horizon with numerous additional features.
+    """Specialized base test case class for Horizon which gives access to
+    numerous additional features:
 
       * The ``mox`` mocking framework via ``self.mox``.
       * A ``RequestFactory`` class which supports Django's ``contrib.messages``
@@ -123,32 +118,18 @@ class TestCase(django_test.TestCase):
       * A ready-to-go request object via ``self.request``.
     """
     def setUp(self):
-        super(TestCase, self).setUp()
         self.mox = mox.Mox()
-        self._setup_test_data()
-        self._setup_factory()
-        self._setup_user()
-        self._setup_request()
+        self.factory = RequestFactoryWithMessages()
+        self.user = User.objects.create_user(username='test', password='test')
+        self.assertTrue(self.client.login(username="test", password="test"))
+
+        self.request = http.HttpRequest()
+        self.request.session = self.client._session()
         middleware.HorizonMiddleware().process_request(self.request)
         AuthenticationMiddleware().process_request(self.request)
         os.environ["HORIZON_TEST_RUN"] = "True"
 
-    def _setup_test_data(self):
-        pass
-
-    def _setup_factory(self):
-        self.factory = RequestFactoryWithMessages()
-
-    def _setup_user(self):
-        self.user = User.objects.create_user(username='test', password='test')
-        self.assertTrue(self.client.login(username="test", password="test"))
-
-    def _setup_request(self):
-        self.request = http.HttpRequest()
-        self.request.session = self.client.session
-
     def tearDown(self):
-        super(TestCase, self).tearDown()
         self.mox.UnsetStubs()
         self.mox.VerifyAll()
         del os.environ["HORIZON_TEST_RUN"]
@@ -166,26 +147,16 @@ class TestCase(django_test.TestCase):
         if hasattr(self.user, "_perm_cache"):
             del self.user._perm_cache
 
-    if six.PY3:
-        # Python 2 assert methods renamed in Python 3
-        def assertItemsEqual(self, expected_seq, actual_seq, msg=None):
-            self.assertCountEqual(expected_seq, actual_seq, msg)
-
-        def assertNotRegexpMatches(self, text, unexpected_regexp, msg=None):
-            self.assertNotRegex(text, unexpected_regexp, msg)
-
     def assertNoMessages(self, response=None):
-        """Asserts no messages have been attached by the messages framework.
-
-        The expected messages framework is ``django.contrib.messages``.
+        """Asserts that no messages have been attached by the
+        ``contrib.messages`` framework.
         """
         self.assertMessageCount(response, success=0, warn=0, info=0, error=0)
 
     def assertMessageCount(self, response=None, **kwargs):
-        """Asserts that the expected number of messages have been attached.
-
-        The expected number of messages can be specified per message type.
-        Usage would look like ``self.assertMessageCount(success=1)``.
+        """Asserts that the specified number of messages have been attached
+        for various message types. Usage would look like
+        ``self.assertMessageCount(success=1)``.
         """
         temp_req = self.client.request(**{'wsgi.input': None})
         temp_req.COOKIES = self.client.cookies
@@ -226,7 +197,7 @@ class TestCase(django_test.TestCase):
 
 @unittest.skipUnless(os.environ.get('WITH_SELENIUM', False),
                      "The WITH_SELENIUM env variable is not set.")
-class SeleniumTestCase(LiveServerTestCase):
+class SeleniumTestCase(django_test.LiveServerTestCase):
     @classmethod
     def setUpClass(cls):
         socket.setdefaulttimeout(60)
@@ -256,21 +227,21 @@ class SeleniumTestCase(LiveServerTestCase):
 
 
 class JasmineTests(SeleniumTestCase):
-    """Helper class which allows you to create a simple Jasmine test.
+    """Helper class which allows you to create a simple Jasmine test running
+    through Selenium
 
-    Jasmine tests are run through Selenium.
-    To run a jasmine test suite, create a class which extends JasmineTests in
+    To run a jasmine test suite create a class which extends JasmineTests in
     the :file:`horizon/test/jasmine/jasmine_tests.py` and define two class
     attributes
 
     .. attribute:: sources
 
-        A list of JS source files (the {{ STATIC_URL }} will be added
+        A list of JS source files (the {{STATIC_URL}} will be added
         automatically, these are the source files tested
 
     .. attribute:: specs
 
-        A list of Jasmine JS spec files (the {{ STATIC_URL }} will be added
+        A list of Jasmine JS spec files (the {{STATIC_URL}} will be added
         automatically
 
     .. attribute:: template_name
@@ -278,8 +249,8 @@ class JasmineTests(SeleniumTestCase):
         A template which will contain the html needed by the test,
         this attribute is optional, if it is not specified the default template
         will be used. The template, if specified, must extends
-        :file:`horizon/jasmine/jasmine.html` and inserts the html in a block
-        whose name must be content
+        :file:`horizon/jasmine/jasmine.html` and insert the html in a block
+        which name must be content
     """
     sources = []
     specs = []
@@ -299,14 +270,14 @@ class JasmineTests(SeleniumTestCase):
 
         wait.until(jasmine_done)
         failures = \
-            self.selenium.find_elements_by_css_selector(".spec-detail.failed")
+            self.selenium.find_elements_by_css_selector(".specDetail.failed")
 
         results = []
         for failure in failures:
             results.append(
                 failure.find_element_by_class_name("description").text)
             results.append(
-                failure.find_element_by_class_name("stack-trace").text)
+                failure.find_element_by_class_name("stackTrace").text)
 
         self.assertEqual(results, [], '\n\n' + '\n\n'.join(results) + '\n\n')
 

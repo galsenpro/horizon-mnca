@@ -13,6 +13,7 @@
 #    under the License.
 
 from django.conf.urls import include
+from django.conf.urls import patterns
 from django.conf.urls import url
 
 from openstack_dashboard.dashboards.admin.hypervisors.compute \
@@ -20,10 +21,11 @@ from openstack_dashboard.dashboards.admin.hypervisors.compute \
 from openstack_dashboard.dashboards.admin.hypervisors import views
 
 
-urlpatterns = [
+urlpatterns = patterns(
+    'openstack_dashboard.dashboards.admin.hypervisors.views',
     url(r'^(?P<hypervisor>[^/]+)/$',
         views.AdminDetailView.as_view(),
         name='detail'),
     url(r'^$', views.AdminIndexView.as_view(), name='index'),
     url(r'', include(compute_urls, namespace='compute')),
-]
+)

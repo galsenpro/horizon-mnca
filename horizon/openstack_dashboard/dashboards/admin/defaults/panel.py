@@ -16,9 +16,12 @@ from django.utils.translation import ugettext_lazy as _
 
 import horizon
 
+from openstack_dashboard.dashboards.admin import dashboard
+
 
 class Defaults(horizon.Panel):
     name = _("Defaults")
     slug = 'defaults'
-    policy_rules = (("compute", "context_is_admin"),
-                    ("volume", "context_is_admin"),)
+
+
+dashboard.Admin.register(Defaults)

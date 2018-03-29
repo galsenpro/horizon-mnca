@@ -18,85 +18,48 @@
 
 import collections
 import copy
-from functools import wraps
-from importlib import import_module
-import logging
+from functools import wraps  # noqa
 import os
-import traceback
-import unittest
 
-import django
+from ceilometerclient.v2 import client as ceilometer_client
+from cinderclient import client as cinder_client
 from django.conf import settings
-from django.contrib.messages.storage import default_storage
+from django.contrib.auth.middleware import AuthenticationMiddleware  # noqa
+from django.contrib.messages.storage import default_storage  # noqa
 from django.core.handlers import wsgi
 from django.core import urlresolvers
-from django import http as http_request
-from django.test.client import RequestFactory
+from django import http
+from django.test.client import RequestFactory  # noqa
 from django.test import utils as django_test_utils
-from django.utils import http
-
-from cinderclient import client as cinder_client
+from django.utils.importlib import import_module  # noqa
+from django.utils import unittest
 import glanceclient
+from heatclient import client as heat_client
+import httplib2
 from keystoneclient.v2_0 import client as keystone_client
-import mock
-from mox3 import mox
+import mox
 from neutronclient.v2_0 import client as neutron_client
-from novaclient import api_versions as nova_api_versions
-from novaclient.v2 import client as nova_client
+from novaclient.v1_1 import client as nova_client
 from openstack_auth import user
 from openstack_auth import utils
-from requests.packages.urllib3.connection import HTTPConnection
-import six
-from six import moves
+from saharaclient import client as sahara_client
 from swiftclient import client as swift_client
+from troveclient import client as trove_client
 
 from horizon import base
 from horizon import conf
+from horizon import middleware
 from horizon.test import helpers as horizon_helpers
 from openstack_dashboard import api
 from openstack_dashboard import context_processors
 from openstack_dashboard.test.test_data import utils as test_utils
 
 
-LOG = logging.getLogger(__name__)
-
 # Makes output of failing mox tests much easier to read.
 wsgi.WSGIRequest.__repr__ = lambda self: "<class 'django.http.HttpRequest'>"
 
 
-def create_stubs(stubs_to_create=None):
-    """decorator to simplify setting up multiple stubs at once via mox
-
-    :param stubs_to_create: methods to stub in one or more modules
-    :type stubs_to_create: dict
-
-    The keys are python paths to the module containing the methods to mock.
-
-    To mock a method in openstack_dashboard/api/nova.py, the key is::
-
-        api.nova
-
-    The values are either a tuple or list of methods to mock in the module
-    indicated by the key.
-
-    For example::
-
-        ('server_list',)
-            -or-
-        ('flavor_list', 'server_list',)
-            -or-
-        ['flavor_list', 'server_list']
-
-    Additionally, multiple modules can be mocked at once::
-
-        {
-            api.nova: ('flavor_list', 'server_list'),
-            api.glance: ('image_list_detailed',),
-        }
-
-    """
-    if stubs_to_create is None:
-        stubs_to_create = {}
+def create_stubs(stubs_to_create={}):
     if not isinstance(stubs_to_create, dict):
         raise TypeError("create_stub must be passed a dict, but a %s was "
                         "given." % type(stubs_to_create).__name__)
@@ -117,84 +80,6 @@ def create_stubs(stubs_to_create=None):
             return fn(self, *args, **kwargs)
         return instance_stub_out
     return inner_stub_out
-
-
-def create_mocks(target, methods):
-    """decorator to simplify setting up multiple mocks at once
-
-    :param target: target object whose attribute(s) are patched.
-    :param methods: a list of methods to be patched using mock.
-
-    Each element of methods argument can be a string or a tuple
-    consisting of two strings.
-
-    A string specifies a method name of "target" object to be mocked.
-    The decorator create a mock object for the method and the started mock
-    can be accessed via 'mock_<method-name>' of the test class.
-    For example, in case of::
-
-        @create_mocks(api.nova, ['server_list'])
-
-    you can access the mocked method via "self.mock_server_list"
-    inside a test class.
-
-    The tuple version is useful when there are multiple methods with
-    a same name are mocked in a single test.
-    The format of the tuple is::
-
-        ("<method-name-to-be-mocked>", "<attr-name>")
-
-    The decorator create a mock object for "<method-name-to-be-mocked>"
-    and the started mock can be accessed via 'mock_<attr-name>' of
-    the test class.
-
-    Example::
-
-        @create_mocks(
-            api.nova,
-            ['usage_get',
-             ('tenant_absolute_limits', 'nova_tenant_absolute_limits'),
-             'extension_supported'])
-        def test_example(self):
-            ...
-            self.mock_usage_get.return_value = ...
-            self.mock_nova_tenant_absolute_limits.return_value = ...
-            ...
-            self.mock_extension_supported.assert_has_calls(....)
-
-    """
-    def wrapper(function):
-        @wraps(function)
-        def wrapped(inst, *args, **kwargs):
-            for method in methods:
-                if isinstance(method, str):
-                    method_mocked = method
-                    attr_name = method
-                else:
-                    method_mocked = method[0]
-                    attr_name = method[1]
-                m = mock.patch.object(target, method_mocked)
-                setattr(inst, 'mock_%s' % attr_name, m.start())
-            return function(inst, *args, **kwargs)
-        return wrapped
-    return wrapper
-
-
-def _apply_panel_mocks(patchers=None):
-    """Global mocks on panels that get called on all views."""
-    if patchers is None:
-        patchers = {}
-    mocked_methods = getattr(settings, 'TEST_GLOBAL_MOCKS_ON_PANELS', {})
-    for name, mock_config in mocked_methods.items():
-        method = mock_config['method']
-        mock_params = {}
-        for param in ['return_value', 'side_effect']:
-            if param in mock_config:
-                mock_params[param] = mock_config[param]
-        patcher = mock.patch(method, **mock_params)
-        patcher.start()
-        patchers[name] = patcher
-    return patchers
 
 
 class RequestFactoryWithMessages(RequestFactory):
@@ -220,97 +105,69 @@ class TestCase(horizon_helpers.TestCase):
 
     It gives access to numerous additional features:
 
-    * A full suite of test data through various attached objects and
-      managers (e.g. ``self.servers``, ``self.user``, etc.). See the
-      docs for
-      :class:`~openstack_dashboard.test.test_data.utils.TestData`
-      for more information.
-    * The ``mox`` mocking framework via ``self.mox``.
-    * A set of request context data via ``self.context``.
-    * A ``RequestFactory`` class which supports Django's ``contrib.messages``
-      framework via ``self.factory``.
-    * A ready-to-go request object via ``self.request``.
-    * The ability to override specific time data controls for easier testing.
-    * Several handy additional assertion methods.
+      * A full suite of test data through various attached objects and
+        managers (e.g. ``self.servers``, ``self.user``, etc.). See the
+        docs for
+        :class:`~openstack_dashboard.test.test_data.utils.TestData`
+        for more information.
+      * The ``mox`` mocking framework via ``self.mox``.
+      * A set of request context data via ``self.context``.
+      * A ``RequestFactory`` class which supports Django's ``contrib.messages``
+        framework via ``self.factory``.
+      * A ready-to-go request object via ``self.request``.
+      * The ability to override specific time data controls for easier testing.
+      * Several handy additional assertion methods.
     """
-
-    # To force test failures when unmocked API calls are attempted, provide
-    # boolean variable to store failures
-    missing_mocks = False
-
-    def fake_conn_request(self):
-        # print a stacktrace to illustrate where the unmocked API call
-        # is being made from
-        traceback.print_stack()
-        # forcing a test failure for missing mock
-        self.missing_mocks = True
-
     def setUp(self):
-        self._real_conn_request = HTTPConnection.connect
-        HTTPConnection.connect = self.fake_conn_request
+        test_utils.load_test_data(self)
+        self.mox = mox.Mox()
+        self.factory = RequestFactoryWithMessages()
+        self.context = {'authorized_tenants': self.tenants.list()}
+
+        def fake_conn_request(*args, **kwargs):
+            raise Exception("An external URI request tried to escape through "
+                            "an httplib2 client. Args: %s, kwargs: %s"
+                            % (args, kwargs))
+
+        self._real_conn_request = httplib2.Http._conn_request
+        httplib2.Http._conn_request = fake_conn_request
 
         self._real_context_processor = context_processors.openstack
         context_processors.openstack = lambda request: self.context
 
-        self.patchers = _apply_panel_mocks()
-
-        super(TestCase, self).setUp()
-
-    def _setup_test_data(self):
-        super(TestCase, self)._setup_test_data()
-        test_utils.load_test_data(self)
-        self.context = {
-            'authorized_tenants': self.tenants.list(),
-            'JS_CATALOG': context_processors.get_js_catalog(settings),
-        }
-
-    def _setup_factory(self):
-        # For some magical reason we need a copy of this here.
-        self.factory = RequestFactoryWithMessages()
-
-    def _setup_user(self, **kwargs):
         self._real_get_user = utils.get_user
         tenants = self.context['authorized_tenants']
-        base_kwargs = {
-            'id': self.user.id,
-            'token': self.token,
-            'username': self.user.name,
-            'domain_id': self.domain.id,
-            'user_domain_name': self.domain.name,
-            'tenant_id': self.tenant.id,
-            'service_catalog': self.service_catalog,
-            'authorized_tenants': tenants
-        }
-        base_kwargs.update(kwargs)
-        self.setActiveUser(**base_kwargs)
-
-    def _setup_request(self):
-        super(TestCase, self)._setup_request()
+        self.setActiveUser(id=self.user.id,
+                           token=self.token,
+                           username=self.user.name,
+                           domain_id=self.domain.id,
+                           tenant_id=self.tenant.id,
+                           service_catalog=self.service_catalog,
+                           authorized_tenants=tenants)
+        self.request = http.HttpRequest()
+        self.request.session = self.client._session()
         self.request.session['token'] = self.token.id
+        middleware.HorizonMiddleware().process_request(self.request)
+        AuthenticationMiddleware().process_request(self.request)
+        os.environ["HORIZON_TEST_RUN"] = "True"
 
     def tearDown(self):
-        HTTPConnection.connect = self._real_conn_request
+        self.mox.UnsetStubs()
+        httplib2.Http._conn_request = self._real_conn_request
         context_processors.openstack = self._real_context_processor
         utils.get_user = self._real_get_user
-        mock.patch.stopall()
-        super(TestCase, self).tearDown()
-
-        # cause a test failure if an unmocked API call was attempted
-        if self.missing_mocks:
-            raise AssertionError("An unmocked API call was made.")
+        self.mox.VerifyAll()
+        del os.environ["HORIZON_TEST_RUN"]
 
     def setActiveUser(self, id=None, token=None, username=None, tenant_id=None,
                       service_catalog=None, tenant_name=None, roles=None,
-                      authorized_tenants=None, enabled=True, domain_id=None,
-                      user_domain_name=None):
+                      authorized_tenants=None, enabled=True, domain_id=None):
         def get_user(request):
             return user.User(id=id,
                              token=token,
                              user=username,
                              domain_id=domain_id,
-                             user_domain_name=user_domain_name,
                              tenant_id=tenant_id,
-                             tenant_name=tenant_name,
                              service_catalog=service_catalog,
                              roles=roles,
                              enabled=enabled,
@@ -324,14 +181,10 @@ class TestCase(horizon_helpers.TestCase):
         Asserts that the given response issued a 302 redirect without
         processing the view which is redirected to.
         """
-        if django.VERSION >= (1, 9):
-            loc = six.text_type(response._headers.get('location', None)[1])
-            loc = http.urlunquote(loc)
-            expected_url = http.urlunquote(expected_url)
-            self.assertEqual(loc, expected_url)
-        else:
-            self.assertEqual(response._headers.get('location', None),
-                             ('Location', settings.TESTSERVER + expected_url))
+        assert (response.status_code / 100 == 3), \
+            "The response did not return a redirect."
+        self.assertEqual(response._headers.get('location', None),
+                         ('Location', settings.TESTSERVER + expected_url))
         self.assertEqual(response.status_code, 302)
 
     def assertNoFormErrors(self, response, context_name="form"):
@@ -363,77 +216,12 @@ class TestCase(horizon_helpers.TestCase):
             assert len(errors) == count, \
                 "%d errors were found on the form, %d expected" % \
                 (len(errors), count)
-            if message and message not in six.text_type(errors):
+            if message and message not in unicode(errors):
                 self.fail("Expected message not found, instead found: %s"
                           % ["%s: %s" % (key, [e for e in field_errors]) for
                              (key, field_errors) in errors.items()])
         else:
             assert len(errors) > 0, "No errors were found on the form"
-
-    def assertStatusCode(self, response, expected_code):
-        """Validates an expected status code.
-
-        Matches camel case of other assert functions
-        """
-        if response.status_code == expected_code:
-            return
-        self.fail('status code %r != %r: %s' % (response.status_code,
-                                                expected_code,
-                                                response.content))
-
-    def assertItemsCollectionEqual(self, response, items_list):
-        self.assertEqual(response.json, {"items": items_list})
-
-    def getAndAssertTableRowAction(self, response, table_name,
-                                   action_name, row_id):
-        table = response.context[table_name + '_table']
-        rows = list(moves.filter(lambda x: x.id == row_id,
-                                 table.data))
-        self.assertEqual(1, len(rows),
-                         "Did not find a row matching id '%s'" % row_id)
-        row_actions = table.get_row_actions(rows[0])
-        actions = list(moves.filter(lambda x: x.name == action_name,
-                                    row_actions))
-
-        msg_args = (action_name, table_name, row_id)
-        self.assertGreater(
-            len(actions), 0,
-            "No action named '%s' found in '%s' table for id '%s'" % msg_args)
-
-        self.assertEqual(
-            1, len(actions),
-            "Multiple actions named '%s' found in '%s' table for id '%s'"
-            % msg_args)
-
-        return actions[0]
-
-    def getAndAssertTableAction(self, response, table_name, action_name):
-
-        table = response.context[table_name + '_table']
-        table_actions = table.get_table_actions()
-        actions = list(moves.filter(lambda x: x.name == action_name,
-                                    table_actions))
-        msg_args = (action_name, table_name)
-        self.assertGreater(
-            len(actions), 0,
-            "No action named '%s' found in '%s' table" % msg_args)
-
-        self.assertEqual(
-            1, len(actions),
-            "More than one action named '%s' found in '%s' table" % msg_args)
-
-        return actions[0]
-
-    @staticmethod
-    def mock_rest_request(**args):
-        mock_args = {
-            'user.is_authenticated.return_value': True,
-            'is_ajax.return_value': True,
-            'policy.check.return_value': True,
-            'body': ''
-        }
-        mock_args.update(args)
-        return mock.Mock(**mock_args)
 
 
 class BaseAdminViewTests(TestCase):
@@ -476,30 +264,28 @@ class APITestCase(TestCase):
             """
             return self.stub_keystoneclient()
 
-        def fake_glanceclient(request, version='1'):
-            """Returns the stub glanceclient.
-
-            Only necessary because the function takes too many arguments to
-            conveniently be a lambda.
-            """
-            return self.stub_glanceclient()
-
-        def fake_novaclient(request, version=None):
-            return self.stub_novaclient()
-
         # Store the original clients
         self._original_glanceclient = api.glance.glanceclient
         self._original_keystoneclient = api.keystone.keystoneclient
         self._original_novaclient = api.nova.novaclient
         self._original_neutronclient = api.neutron.neutronclient
         self._original_cinderclient = api.cinder.cinderclient
+        self._original_heatclient = api.heat.heatclient
+        self._original_ceilometerclient = api.ceilometer.ceilometerclient
+        self._original_troveclient = api.trove.troveclient
+        self._original_saharaclient = api.sahara.client
 
         # Replace the clients with our stubs.
-        api.glance.glanceclient = fake_glanceclient
+        api.glance.glanceclient = lambda request: self.stub_glanceclient()
         api.keystone.keystoneclient = fake_keystoneclient
-        api.nova.novaclient = fake_novaclient
+        api.nova.novaclient = lambda request: self.stub_novaclient()
         api.neutron.neutronclient = lambda request: self.stub_neutronclient()
         api.cinder.cinderclient = lambda request: self.stub_cinderclient()
+        api.heat.heatclient = lambda request: self.stub_heatclient()
+        api.ceilometer.ceilometerclient = lambda request: \
+            self.stub_ceilometerclient()
+        api.trove.troveclient = lambda request: self.stub_troveclient()
+        api.sahara.client = lambda request: self.stub_saharaclient()
 
     def tearDown(self):
         super(APITestCase, self).tearDown()
@@ -508,25 +294,18 @@ class APITestCase(TestCase):
         api.keystone.keystoneclient = self._original_keystoneclient
         api.neutron.neutronclient = self._original_neutronclient
         api.cinder.cinderclient = self._original_cinderclient
+        api.heat.heatclient = self._original_heatclient
+        api.ceilometer.ceilometerclient = self._original_ceilometerclient
+        api.trove.troveclient = self._original_troveclient
+        api.sahara.client = self._original_saharaclient
 
     def stub_novaclient(self):
         if not hasattr(self, "novaclient"):
             self.mox.StubOutWithMock(nova_client, 'Client')
-            # mock the api_version since MockObject.__init__ ignores it.
-            # The preferred version in the api.nova code is 2 but that's
-            # equivalent to 2.1 now and is the base version that's backward
-            # compatible to 2.0 anyway.
-            api_version = nova_api_versions.APIVersion('2.1')
-            nova_client.Client.api_version = api_version
-            nova_client.Client.projectid = 'fake_project'
-            nova_client.Client.tenant_id = 'fake_tenant'
             self.novaclient = self.mox.CreateMock(nova_client.Client)
         return self.novaclient
 
     def stub_cinderclient(self):
-        LOG.warning("APITestCase has been deprecated for Cinder-related "
-                    "tests and will be removerd in 'S' release. Please "
-                    "convert  your to use APIMockTestCase instead.")
         if not hasattr(self, "cinderclient"):
             self.mox.StubOutWithMock(cinder_client, 'Client')
             self.cinderclient = self.mox.CreateMock(cinder_client.Client)
@@ -546,9 +325,6 @@ class APITestCase(TestCase):
         return self.keystoneclient
 
     def stub_glanceclient(self):
-        LOG.warning("APITestCase has been deprecated for Glance-related "
-                    "tests and will be removerd in 'S' release. Please "
-                    "convert  your to use APIMockTestCase instead.")
         if not hasattr(self, "glanceclient"):
             self.mox.StubOutWithMock(glanceclient, 'Client')
             self.glanceclient = self.mox.CreateMock(glanceclient.Client)
@@ -577,28 +353,30 @@ class APITestCase(TestCase):
                 expected_calls -= 1
         return self.swiftclient
 
+    def stub_heatclient(self):
+        if not hasattr(self, "heatclient"):
+            self.mox.StubOutWithMock(heat_client, 'Client')
+            self.heatclient = self.mox.CreateMock(heat_client.Client)
+        return self.heatclient
 
-class APIMockTestCase(APITestCase):
-    def stub_cinderclient(self):
-        if not hasattr(self, "cinderclient"):
-            self.cinderclient = mock.Mock()
-        return self.cinderclient
+    def stub_ceilometerclient(self):
+        if not hasattr(self, "ceilometerclient"):
+            self.mox.StubOutWithMock(ceilometer_client, 'Client')
+            self.ceilometerclient = self.mox.\
+                CreateMock(ceilometer_client.Client)
+        return self.ceilometerclient
 
-    def stub_glanceclient(self):
-        if not hasattr(self, "glanceclient"):
-            self.glanceclient = mock.Mock()
-        return self.glanceclient
+    def stub_troveclient(self):
+        if not hasattr(self, "troveclient"):
+            self.mox.StubOutWithMock(trove_client, 'Client')
+            self.troveclient = self.mox.CreateMock(trove_client.Client)
+        return self.troveclient
 
-
-# Need this to test both Glance API V1 and V2 versions
-class ResetImageAPIVersionMixin(object):
-    def setUp(self):
-        super(ResetImageAPIVersionMixin, self).setUp()
-        api.glance.VERSIONS.clear_active_cache()
-
-    def tearDown(self):
-        api.glance.VERSIONS.clear_active_cache()
-        super(ResetImageAPIVersionMixin, self).tearDown()
+    def stub_saharaclient(self):
+        if not hasattr(self, "saharaclient"):
+            self.mox.StubOutWithMock(sahara_client, 'Client')
+            self.saharaclient = self.mox.CreateMock(sahara_client.Client)
+        return self.saharaclient
 
 
 @unittest.skipUnless(os.environ.get('WITH_SELENIUM', False),
@@ -618,13 +396,11 @@ class SeleniumTestCase(horizon_helpers.SeleniumTestCase):
                            tenant_id=self.tenant.id,
                            service_catalog=self.service_catalog,
                            authorized_tenants=self.tenants.list())
-        self.patchers = _apply_panel_mocks()
         os.environ["HORIZON_TEST_RUN"] = "True"
 
     def tearDown(self):
         self.mox.UnsetStubs()
         utils.get_user = self._real_get_user
-        mock.patch.stopall()
         self.mox.VerifyAll()
         del os.environ["HORIZON_TEST_RUN"]
 
@@ -678,6 +454,9 @@ class PluginTestCase(TestCase):
         self.old_horizon_config = conf.HORIZON_CONFIG
         conf.HORIZON_CONFIG = conf.LazySettings()
         base.Horizon._urls()
+        # Trigger discovery, registration, and URLconf generation if it
+        # hasn't happened yet.
+        self.client.get("/")
         # Store our original dashboards
         self._discovered_dashboards = base.Horizon._registry.keys()
         # Gather up and store our original panels for each dashboard
@@ -694,7 +473,7 @@ class PluginTestCase(TestCase):
         del base.Horizon
         base.Horizon = base.HorizonSite()
         # Reload the convenience references to Horizon stored in __init__
-        moves.reload_module(import_module("horizon"))
+        reload(import_module("horizon"))
         # Re-register our original dashboards and panels.
         # This is necessary because autodiscovery only works on the first
         # import, and calling reload introduces innumerable additional
@@ -714,7 +493,7 @@ class PluginTestCase(TestCase):
         only for testing and should never be used on a live site.
         """
         urlresolvers.clear_url_caches()
-        moves.reload_module(import_module(settings.ROOT_URLCONF))
+        reload(import_module(settings.ROOT_URLCONF))
         base.Horizon._urls()
 
 
@@ -741,29 +520,3 @@ class update_settings(django_test_utils.override_settings):
                     copied.update(new_value)
                     kwargs[key] = copied
         super(update_settings, self).__init__(**kwargs)
-
-
-def mock_obj_to_dict(r):
-    return mock.Mock(**{'to_dict.return_value': r})
-
-
-def mock_factory(r):
-    """mocks all the attributes as well as the to_dict """
-    mocked = mock_obj_to_dict(r)
-    mocked.configure_mock(**r)
-    return mocked
-
-
-class IsA(object):
-    """Class to compare param is a specified class."""
-    def __init__(self, cls):
-        self.cls = cls
-
-    def __eq__(self, other):
-        return isinstance(other, self.cls)
-
-
-class IsHttpRequest(IsA):
-    """Class to compare param is django.http.HttpRequest."""
-    def __init__(self):
-        super(IsHttpRequest, self).__init__(http_request.HttpRequest)

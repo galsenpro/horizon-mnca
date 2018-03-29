@@ -32,11 +32,9 @@ from openstack_dashboard.dashboards.project.networks.subnets \
 from openstack_dashboard.dashboards.project.networks.subnets import utils
 from openstack_dashboard.dashboards.project.networks.subnets \
     import workflows as project_workflows
-from openstack_dashboard.dashboards.project.networks.views \
-    import DefaultSubnetWorkflowMixin
 
 
-class CreateView(DefaultSubnetWorkflowMixin, workflows.WorkflowView):
+class CreateView(workflows.WorkflowView):
     workflow_class = project_workflows.CreateSubnet
 
     @memoized.memoized_method
@@ -44,6 +42,7 @@ class CreateView(DefaultSubnetWorkflowMixin, workflows.WorkflowView):
         try:
             network_id = self.kwargs["network_id"]
             network = api.neutron.network_get(self.request, network_id)
+            network.set_id_as_name_if_empty()
             return network
         except Exception:
             redirect = reverse('horizon:project:networks:index')
@@ -53,8 +52,7 @@ class CreateView(DefaultSubnetWorkflowMixin, workflows.WorkflowView):
     def get_initial(self):
         network = self.get_object()
         return {"network_id": self.kwargs['network_id'],
-                "network_name": network.name_or_id,
-                "dns_nameservers": self.get_default_dns_servers()}
+                "network_name": network.name}
 
 
 class UpdateView(workflows.WorkflowView):
@@ -102,8 +100,7 @@ class UpdateView(workflows.WorkflowView):
 
 class DetailView(tabs.TabView):
     tab_group_class = project_tabs.SubnetDetailTabs
-    template_name = 'horizon/common/_detail.html'
-    page_title = "{{ subnet.name|default:subnet.id }}"
+    template_name = 'project/networks/subnets/detail.html'
 
     @memoized.memoized_method
     def get_data(self):
@@ -121,59 +118,21 @@ class DetailView(tabs.TabView):
                     subnet.ipv6_ra_mode, subnet.ipv6_address_mode)
                 subnet.ipv6_modes_desc = utils.IPV6_MODE_MAP.get(ipv6_modes)
 
-            if ('subnetpool_id' in subnet and
-                subnet.subnetpool_id and
-                # subnetpool_id = prefix_delegation is a special subnetpool
-                # and we cannot retrieve such subnet pool.
-                subnet.subnetpool_id != 'prefix_delegation' and
-                api.neutron.is_extension_supported(self.request,
-                                                   'subnet_allocation')):
-                subnetpool = api.neutron.subnetpool_get(self.request,
-                                                        subnet.subnetpool_id)
-                subnet.subnetpool_name = subnetpool.name
-
         return subnet
-
-    @memoized.memoized_method
-    def get_network(self, network_id):
-        try:
-            network = api.neutron.network_get(self.request, network_id)
-        except Exception:
-            network = {}
-            msg = _('Unable to retrieve network details.')
-            exceptions.handle(self.request, msg)
-
-        return network
 
     def get_context_data(self, **kwargs):
         context = super(DetailView, self).get_context_data(**kwargs)
         subnet = self.get_data()
-        network = self.get_network(subnet.network_id)
-        subnet.network_name = network.get('name')
-        subnet.network_url = self.get_network_detail_url(subnet.network_id)
-        network_nav = subnet.network_name or subnet.network_id
         table = project_tables.SubnetsTable(self.request,
                                             network_id=subnet.network_id)
-        # TODO(robcresswell) Add URL for "Subnets" crumb after bug/1416838
-        breadcrumb = [
-            (network_nav, subnet.network_url),
-            (_("Subnets"), None)
-        ]
-        context["custom_breadcrumb"] = breadcrumb
         context["subnet"] = subnet
-        context["url"] = \
-            reverse("horizon:project:networks:subnets_tab", args=[network.id])
+        context["url"] = self.get_redirect_url()
         context["actions"] = table.render_row_actions(subnet)
         return context
 
     def get_tabs(self, request, *args, **kwargs):
         subnet = self.get_data()
         return self.tab_group_class(request, subnet=subnet, **kwargs)
-
-    @staticmethod
-    def get_network_detail_url(network_id):
-        return reverse('horizon:project:networks:detail',
-                       args=(network_id,))
 
     @staticmethod
     def get_redirect_url():

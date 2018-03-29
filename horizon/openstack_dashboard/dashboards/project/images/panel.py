@@ -17,16 +17,13 @@ from django.utils.translation import ugettext_lazy as _
 
 import horizon
 
+from openstack_dashboard.dashboards.project import dashboard
+
 
 class Images(horizon.Panel):
-    #name = _("Images")
-    #slug = 'images'
-    #permissions = ('openstack.services.image',)
-    #policy_rules = (('image', 'get_images'),)
-    name = "Images"
+    name = _("Images")
     slug = 'images'
-    permissions = ('openstack.roles.admin', 'openstack.service.image')
-    policy_rules = (('endpoint', 'endpoint:rule'),)
+    permissions = ('openstack.services.image',)
 
-# You could also register your panel with another application's dashboard
+
 dashboard.Project.register(Images)

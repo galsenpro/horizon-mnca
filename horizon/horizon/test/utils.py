@@ -11,16 +11,25 @@
 #    under the License.
 
 
-class ObjDictWrapper(dict):
-    """Wrapper that provides both dict- and object-like attribute access."""
-    def __getattr__(self, item):
-        if item in self:
-            return self[item]
-        else:
-            raise AttributeError(item)
+class ObjDictWrapper(object):
+    """ObjDictWrapper is a container that provides both dictionary-like and
+    object-like attribute access.
+    """
+    def __init__(self, **kwargs):
+        for key, value in kwargs.iteritems():
+            setattr(self, key, value)
 
-    def __setattr__(self, item, value):
-        self[item] = value
+    def __getitem__(self, item):
+        return getattr(self, item)
 
-    def __repr__(self):
-        return '<ObjDictWrapper %s>' % super(ObjDictWrapper, self).__repr__()
+    def __setitem__(self, key, value):
+        setattr(self, key, value)
+
+    def __delitem__(self, key):
+        delattr(self, key)
+
+    def __contains__(self, item):
+        return hasattr(self, item)
+
+    def __iter__(self):
+        return iter(self.__dict__.itervalues())

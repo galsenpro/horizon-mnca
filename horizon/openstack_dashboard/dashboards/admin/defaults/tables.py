@@ -16,8 +16,6 @@ from django.utils.translation import ugettext_lazy as _
 
 from horizon import tables
 
-from openstack_dashboard.usage import quotas
-
 
 class QuotaFilterAction(tables.FilterAction):
     def filter(self, table, tenants, filter_string):
@@ -35,57 +33,32 @@ class UpdateDefaultQuotas(tables.LinkAction):
     name = "update_defaults"
     verbose_name = _("Update Defaults")
     url = "horizon:admin:defaults:update_defaults"
-    classes = ("ajax-modal",)
-    icon = "pencil"
-
-    def allowed(self, request, _=None):
-        return quotas.enabled_quotas(request)
+    classes = ("ajax-modal", "btn-edit")
 
 
 def get_quota_name(quota):
     QUOTA_NAMES = {
-        # Nova
         'injected_file_content_bytes': _('Injected File Content Bytes'),
         'injected_file_path_bytes': _('Length of Injected File Path'),
         'metadata_items': _('Metadata Items'),
         'cores': _('VCPUs'),
         'instances': _('Instances'),
         'injected_files': _('Injected Files'),
-        'ram': _('RAM (MB)'),
-        'key_pairs': _('Key Pairs'),
-        'server_group_members': _('Server Group Members'),
-        'server_groups': _('Server Groups'),
-        # Cinder
         'volumes': _('Volumes'),
         'snapshots': _('Volume Snapshots'),
-        'backups': _('Backups'),
-        'gigabytes': _('Total Size of Volumes and Snapshots (GiB)'),
-        'backup_gigabytes': _('Backup Size (GiB)'),
-        'per_volume_gigabytes': _('Per Volume Size (GiB)'),
-        'groups': _('Volume Groups'),
+        'gigabytes': _('Total Size of Volumes and Snapshots (GB)'),
+        'ram': _('RAM (MB)'),
+        'floating_ips': _('Floating IPs'),
+        'security_groups': _('Security Groups'),
+        'security_group_rules': _('Security Group Rules'),
+        'key_pairs': _('Key Pairs'),
+        'fixed_ips': _('Fixed IPs'),
+        'volumes_volume_luks': _('LUKS Volumes'),
+        'snapshots_volume_luks': _('LUKS Volume Snapshots'),
+        'gigabytes_volume_luks':
+        _('Total Size of LUKS Volumes and Snapshots (GB)'),
         'dm-crypt': _('dm-crypt'),
-        # Neutron
-        'network': _('Networks'),
-        'subnet': _('Subnets'),
-        'port': _('Ports'),
-        'router': _('Routers'),
-        'floatingip': _('Floating IPs'),
-        'security_group': _('Security Groups'),
-        'security_group_rule': _('Security Group Rules'),
     }
-
-    QUOTA_DYNAMIC_NAMES = {
-        'volumes': _('Volumes of Type %(type)s'),
-        'snapshots': _('Volume Snapshots of Type %(type)s'),
-        'gigabytes':
-            _('Total Size of Volumes and Snapshots (GiB) of Type %(type)s')
-    }
-
-    # NOTE(Itxaka): This quotas are dynamic and depend on the type of
-    # volume types that are defined by the operator
-    if quota.name.startswith(('volumes_', 'snapshots_', 'gigabytes_')):
-        params = {'type': quota.name.split('_')[1]}
-        return QUOTA_DYNAMIC_NAMES.get(quota.name.split('_')[0]) % params
     return QUOTA_NAMES.get(quota.name, quota.name.replace("_", " ").title())
 
 
@@ -96,7 +69,7 @@ class QuotasTable(tables.DataTable):
     def get_object_id(self, obj):
         return obj.name
 
-    class Meta(object):
+    class Meta:
         name = "quotas"
         verbose_name = _("Quotas")
         table_actions = (QuotaFilterAction, UpdateDefaultQuotas)

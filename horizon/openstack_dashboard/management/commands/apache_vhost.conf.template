@@ -18,22 +18,18 @@
     CustomLog {{ LOGDIR }}/{{ PROJECT_NAME }}-access.log combined
 
     WSGIScriptReloading On
-    WSGIDaemonProcess {{ PROJECT_NAME }}_website processes={{ PROCESSES }}
+    WSGIDaemonProcess {{ PROJECT_NAME }}_website
     WSGIProcessGroup {{ PROJECT_NAME }}_website
-    WSGIApplicationGroup %{GLOBAL}
+    WSGIApplicationGroup {{ PROJECT_NAME }}_website
     WSGIPassAuthorization On
 
     WSGIScriptAlias / {{ WSGI_FILE }}
-{% if APACHE2_VERSION >= 2.4 %}
-    <Location "/">
-        Require all granted
-    </Location>
-{% else %}
+
     <Location "/">
         Order Allow,Deny
         Allow from all
     </Location>
-{% endif %}
+
     Alias /static {{ STATIC_PATH }}
     <Location "/static">
         SetHandler None

@@ -12,7 +12,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from django.conf import settings
 from django.core.urlresolvers import reverse
 from django.core.urlresolvers import reverse_lazy
 from django.utils.translation import ugettext_lazy as _
@@ -31,39 +30,20 @@ from openstack_dashboard.dashboards.identity.groups \
     import forms as project_forms
 from openstack_dashboard.dashboards.identity.groups \
     import tables as project_tables
-from openstack_dashboard.utils import identity
 
 
 class IndexView(tables.DataTableView):
     table_class = project_tables.GroupsTable
     template_name = constants.GROUPS_INDEX_VIEW_TEMPLATE
-    page_title = _("Groups")
-
-    def needs_filter_first(self, table):
-        return self._needs_filter_first
 
     def get_data(self):
         groups = []
-        filters = self.get_filters()
-        self._needs_filter_first = False
-
+        domain_context = self.request.session.get('domain_context', None)
         if policy.check((("identity", "identity:list_groups"),),
                         self.request):
-
-            # If filter_first is set and if there are not other filters
-            # selected, then search criteria must be provided and
-            # return an empty list
-            filter_first = getattr(settings, 'FILTER_DATA_FIRST', {})
-            if filter_first.get('identity.groups', False) \
-                    and len(filters) == 0:
-                self._needs_filter_first = True
-                return groups
-
-            domain_id = identity.get_domain_id_for_operation(self.request)
             try:
                 groups = api.keystone.group_list(self.request,
-                                                 domain=domain_id,
-                                                 filters=filters)
+                                                 domain=domain_context)
             except Exception:
                 exceptions.handle(self.request,
                                   _('Unable to retrieve group list.'))
@@ -74,23 +54,15 @@ class IndexView(tables.DataTableView):
 
 
 class CreateView(forms.ModalFormView):
-    template_name = constants.GROUPS_CREATE_VIEW_TEMPLATE
-    form_id = "create_group_form"
     form_class = project_forms.CreateGroupForm
-    submit_label = _("Create Group")
-    submit_url = reverse_lazy(constants.GROUPS_CREATE_URL)
+    template_name = constants.GROUPS_CREATE_VIEW_TEMPLATE
     success_url = reverse_lazy(constants.GROUPS_INDEX_URL)
-    page_title = _("Create Group")
 
 
 class UpdateView(forms.ModalFormView):
-    template_name = constants.GROUPS_UPDATE_VIEW_TEMPLATE
-    form_id = "update_group_form"
     form_class = project_forms.UpdateGroupForm
-    submit_url = "horizon:identity:groups:update"
-    submit_label = _("Update Group")
+    template_name = constants.GROUPS_UPDATE_VIEW_TEMPLATE
     success_url = reverse_lazy(constants.GROUPS_INDEX_URL)
-    page_title = _("Update Group")
 
     @memoized.memoized_method
     def get_object(self):
@@ -105,8 +77,7 @@ class UpdateView(forms.ModalFormView):
 
     def get_context_data(self, **kwargs):
         context = super(UpdateView, self).get_context_data(**kwargs)
-        args = (self.get_object().id,)
-        context['submit_url'] = reverse(self.submit_url, args=args)
+        context['group'] = self.get_object()
         return context
 
     def get_initial(self):
@@ -125,9 +96,7 @@ class GroupManageMixin(object):
     @memoized.memoized_method
     def _get_group_members(self):
         group_id = self.kwargs['group_id']
-        domain_id = identity.get_domain_id_for_operation(self.request)
-        return api.keystone.user_list(self.request, domain=domain_id,
-                                      group=group_id)
+        return api.keystone.user_list(self.request, group=group_id)
 
     @memoized.memoized_method
     def _get_group_non_members(self):
@@ -136,13 +105,12 @@ class GroupManageMixin(object):
                                            domain=domain_id)
         group_members = self._get_group_members()
         group_member_ids = [user.id for user in group_members]
-        return [u for u in all_users if u.id not in group_member_ids]
+        return filter(lambda u: u.id not in group_member_ids, all_users)
 
 
 class ManageMembersView(GroupManageMixin, tables.DataTableView):
     table_class = project_tables.GroupMembersTable
     template_name = constants.GROUPS_MANAGE_VIEW_TEMPLATE
-    page_title = _("Group Management: {{ group.name }}")
 
     def get_context_data(self, **kwargs):
         context = super(ManageMembersView, self).get_context_data(**kwargs)

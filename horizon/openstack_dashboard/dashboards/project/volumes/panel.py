@@ -16,12 +16,13 @@ from django.utils.translation import ugettext_lazy as _
 
 import horizon
 
+from openstack_dashboard.dashboards.project import dashboard
+
 
 class Volumes(horizon.Panel):
     name = _("Volumes")
     slug = 'volumes'
-    permissions = (
-        ('openstack.services.volume', 'openstack.services.volumev2',
-         'openstack.services.volumev3'),
-    )
-    policy_rules = (("volume", "volume:get_all"),)
+    permissions = ('openstack.services.volume',)
+
+
+dashboard.Project.register(Volumes)

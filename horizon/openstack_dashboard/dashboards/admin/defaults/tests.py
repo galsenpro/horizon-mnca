@@ -14,7 +14,7 @@
 
 from django.core.urlresolvers import reverse
 from django import http
-from mox3.mox import IsA
+from mox import IsA  # noqa
 
 from openstack_dashboard import api
 from openstack_dashboard.test import helpers as test
@@ -40,16 +40,12 @@ class ServicesViewTests(test.BaseAdminViewTests):
         # should be in the list.
         self.mox.StubOutWithMock(api.nova, 'default_quota_get')
         self.mox.StubOutWithMock(api.cinder, 'default_quota_get')
-        self.mox.StubOutWithMock(api.cinder, 'is_volume_service_enabled')
         self.mox.StubOutWithMock(api.base, 'is_service_enabled')
         if neutron_enabled:
             self.mox.StubOutWithMock(api.neutron, 'is_extension_supported')
-            self.mox.StubOutWithMock(api.neutron, 'is_router_enabled')
 
-        api.cinder.is_volume_service_enabled(IsA(http.HttpRequest)) \
-            .MultipleTimes().AndReturn(True)
-        api.base.is_service_enabled(IsA(http.HttpRequest), 'compute') \
-            .MultipleTimes().AndReturn(True)
+        api.base.is_service_enabled(IsA(http.HttpRequest), 'volume') \
+            .AndReturn(True)
         api.base.is_service_enabled(IsA(http.HttpRequest), 'network') \
             .MultipleTimes().AndReturn(neutron_enabled)
 
@@ -60,9 +56,7 @@ class ServicesViewTests(test.BaseAdminViewTests):
         if neutron_enabled:
             api.neutron.is_extension_supported(
                 IsA(http.HttpRequest),
-                'security-group').MultipleTimes().AndReturn(neutron_sg_enabled)
-            api.neutron.is_router_enabled(
-                IsA(http.HttpRequest)).MultipleTimes().AndReturn(True)
+                'security-group').AndReturn(neutron_sg_enabled)
 
         self.mox.ReplayAll()
 
@@ -80,8 +74,16 @@ class ServicesViewTests(test.BaseAdminViewTests):
                          '<Quota: (snapshots, 1)>',
                          '<Quota: (volumes, 1)>',
                          '<Quota: (cores, 10)>',
-                         '<Quota: (key_pairs, 100)>',
-                         '<Quota: (injected_file_path_bytes, 255)>']
+                         '<Quota: (floating_ips, 1)>',
+                         '<Quota: (fixed_ips, 10)>',
+                         '<Quota: (security_groups, 10)>',
+                         '<Quota: (security_group_rules, 20)>']
+        if neutron_enabled:
+            expected_tabs.remove('<Quota: (floating_ips, 1)>')
+            expected_tabs.remove('<Quota: (fixed_ips, 10)>')
+            if neutron_sg_enabled:
+                expected_tabs.remove('<Quota: (security_groups, 10)>')
+                expected_tabs.remove('<Quota: (security_group_rules, 20)>')
 
         self.assertQuerysetEqual(quotas_tab._tables['quotas'].data,
                                  expected_tabs,
@@ -91,9 +93,7 @@ class ServicesViewTests(test.BaseAdminViewTests):
 class UpdateDefaultQuotasTests(test.BaseAdminViewTests):
     def _get_quota_info(self, quota):
         quota_data = {}
-        updatable_quota_fields = (quotas.NOVA_QUOTA_FIELDS |
-                                  quotas.CINDER_QUOTA_FIELDS)
-        for field in updatable_quota_fields:
+        for field in (quotas.QUOTA_FIELDS + quotas.MISSING_QUOTA_FIELDS):
             if field != 'fixed_ips':
                 limit = quota.get(field).limit or 10
                 quota_data[field] = int(limit)
@@ -107,7 +107,8 @@ class UpdateDefaultQuotasTests(test.BaseAdminViewTests):
         quota = self.quotas.first()
 
         # init
-        quotas.get_disabled_quotas(IsA(http.HttpRequest)).AndReturn(set())
+        quotas.get_disabled_quotas(IsA(http.HttpRequest)) \
+            .AndReturn(self.disabled_quotas.first())
         quotas.get_default_quota_data(IsA(http.HttpRequest)).AndReturn(quota)
 
         # update some fields
@@ -116,7 +117,7 @@ class UpdateDefaultQuotasTests(test.BaseAdminViewTests):
         updated_quota = self._get_quota_info(quota)
 
         # handle
-        nova_fields = quotas.NOVA_QUOTA_FIELDS
+        nova_fields = quotas.NOVA_QUOTA_FIELDS + quotas.MISSING_QUOTA_FIELDS
         nova_updated_quota = dict([(key, updated_quota[key]) for key in
                                    nova_fields if key != 'fixed_ips'])
         api.nova.default_quota_update(IsA(http.HttpRequest),

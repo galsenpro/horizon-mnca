@@ -15,8 +15,8 @@
 from django.core.urlresolvers import reverse
 from django import http
 
-from mox3.mox import IgnoreArg
-from mox3.mox import IsA
+from mox import IgnoreArg  # noqa
+from mox import IsA  # noqa
 
 from openstack_dashboard import api
 from openstack_dashboard.test import helpers as test
@@ -25,17 +25,12 @@ from openstack_dashboard.test import helpers as test
 ROLES_INDEX_URL = reverse('horizon:identity:roles:index')
 ROLES_CREATE_URL = reverse('horizon:identity:roles:create')
 ROLES_UPDATE_URL = reverse('horizon:identity:roles:update', args=[1])
-INDEX_TEMPLATE = 'horizon/common/_data_table_view.html'
 
 
 class RolesViewTests(test.BaseAdminViewTests):
     @test.create_stubs({api.keystone: ('role_list',)})
     def test_index(self):
-        filters = {}
-
-        api.keystone.role_list(IgnoreArg(),
-                               filters=filters) \
-            .AndReturn(self.roles.list())
+        api.keystone.role_list(IgnoreArg()).AndReturn(self.roles.list())
 
         self.mox.ReplayAll()
 
@@ -44,17 +39,13 @@ class RolesViewTests(test.BaseAdminViewTests):
         self.assertContains(res, 'Edit')
         self.assertContains(res, 'Delete Role')
 
-        self.assertTemplateUsed(res, INDEX_TEMPLATE)
+        self.assertTemplateUsed(res, 'identity/roles/index.html')
         self.assertItemsEqual(res.context['table'].data, self.roles.list())
 
     @test.create_stubs({api.keystone: ('role_list',
                                        'keystone_can_edit_role', )})
     def test_index_with_keystone_can_edit_role_false(self):
-        filters = {}
-
-        api.keystone.role_list(IgnoreArg(),
-                               filters=filters) \
-            .AndReturn(self.roles.list())
+        api.keystone.role_list(IgnoreArg()).AndReturn(self.roles.list())
         api.keystone.keystone_can_edit_role() \
             .MultipleTimes().AndReturn(False)
         self.mox.ReplayAll()
@@ -65,7 +56,7 @@ class RolesViewTests(test.BaseAdminViewTests):
         self.assertNotContains(res, 'Edit')
         self.assertNotContains(res, 'Delete Role')
 
-        self.assertTemplateUsed(res, INDEX_TEMPLATE)
+        self.assertTemplateUsed(res, 'identity/roles/index.html')
         self.assertItemsEqual(res.context['table'].data, self.roles.list())
 
     @test.create_stubs({api.keystone: ('role_create', )})
@@ -106,10 +97,8 @@ class RolesViewTests(test.BaseAdminViewTests):
     @test.create_stubs({api.keystone: ('role_list', 'role_delete')})
     def test_delete(self):
         role = self.roles.first()
-        filters = {}
 
-        api.keystone.role_list(IsA(http.HttpRequest),
-                               filters=filters) \
+        api.keystone.role_list(IsA(http.HttpRequest)) \
             .AndReturn(self.roles.list())
         api.keystone.role_delete(IsA(http.HttpRequest),
                                  role.id).AndReturn(None)
@@ -120,10 +109,3 @@ class RolesViewTests(test.BaseAdminViewTests):
         res = self.client.post(ROLES_INDEX_URL, formData)
 
         self.assertNoFormErrors(res)
-
-    @test.update_settings(FILTER_DATA_FIRST={'identity.roles': True})
-    def test_index_with_filter_first(self):
-        res = self.client.get(ROLES_INDEX_URL)
-        self.assertTemplateUsed(res, INDEX_TEMPLATE)
-        roles = res.context['table'].data
-        self.assertItemsEqual(roles, [])

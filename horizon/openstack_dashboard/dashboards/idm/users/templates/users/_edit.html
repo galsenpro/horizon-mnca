@@ -1,0 +1,76 @@
+{% extends "horizon/common/_modal_form.html" %}
+{% load i18n %}
+{% load url from future %}
+{% load form_helpers %}
+
+{% block form_class %}{% endblock %}
+{% block form_action %}{{form.action}}{% endblock %}
+{% block form_enctype %}multipart/form-data{% endblock %}
+
+{% block modal_class %}edit{% if form.title == 'Personal Avatar' %} update-avatar-modal{% endif %}{% endblock %}
+{% block modal-header %}
+{{form.title}}
+{% endblock %}
+
+{% block modal-body %}
+
+{% if form.title == 'Personal Avatar' %}
+<div class="row">
+	<div class="avatar_col col-xs-12 col-md-6{% if not using_gravatar %} used-avatar{% endif %}">
+		<div class="profile_img">
+			<img src="{{ uploaded_image }}" alt="your uploaded image"   />
+		</div>
+		<div class="profile_actions">
+			<button class="btn btn-primary always-enabled avatar-button" {% if not using_gravatar %}disabled="true" {% endif %}name="use_uploaded_image" type="submit">Use this image</button>
+			<div class="clear_right"></div>
+			<button class="btn btn-primary always-enabled ajax-modal" href="{% url 'horizon:idm:users:delete_image' user_id %}"{% if no_uploaded_image %} disabled="true"{% endif %}>Delete this image</button>
+		</div>
+	</div>
+
+	<div class="avatar_col col-xs-12 col-md-6{% if using_gravatar %} used-avatar{% endif %}">
+		{% if gravatar_image %}
+		<div class="profile_img">
+			<img id="gravatar-preview" src="{{ gravatar_image }}" alt="your gravatar"   />
+		</div>
+		<div class="profile_actions">
+			<button class="btn btn-primary always-enabled avatar-button" {% if using_gravatar %}disabled="true" {% endif %}name="use_gravatar" type="submit">Use Gravatar</button>
+			<div class="clear_right"></div>
+			<a class="btn btn-primary always-enabled" href="https://en.gravatar.com/emails/" target="_blank">Edit at Gravatar</a>
+		</div>
+		{% else %}
+		<div class="profile_img">
+			<img id="gravatar-preview" src="{{ STATIC_URL}}dashboard/img/gravatar.png" width="100" height="100" 	alt="gravatar default" />
+		</div>
+		<p class="profile_txt">We're compatible with Gravatar. Create your profile <a href="https://en.gravatar.com/" target="_blank">here</a>!</p>
+		{% endif %}
+	</div>
+</div>
+<div>
+	<fieldset>
+		<h6>Upload an image</h6> {% include "horizon/common/_form_fields.html" %}
+	</fieldset>
+</div>
+
+<div class="row avatar-update-container">
+	<div class="col-md-2 update_actions" style="display:none;">
+		<h6>Select the part of the image you want to use as avatar.</h6>
+		<button id="crop-and-use-button" disabled="true" class="btn btn-primary always-enabled" name="crop_and_use" type="submit">Crop and use</button>
+		<a href="#" class="btn btn-default always-enabled" id="cancel-crop-button">Cancel</a>
+	</div>
+</div>
+
+{% else %}
+<div >
+  <fieldset>
+    {% include "horizon/common/_form_fields.html" %}
+  </fieldset>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block modal-footer %}
+	{% if form.title == 'Personal Avatar' %}
+	{% else %}
+	<button type="submit" class="btn btn-primary">{% trans "Update User" %} </button>
+	{% endif %}
+{% endblock %}

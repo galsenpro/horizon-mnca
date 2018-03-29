@@ -19,29 +19,21 @@
 """
 Views for managing instances.
 """
-from collections import OrderedDict
-import logging
-
-import futurist
-
-from django.conf import settings
 from django.core.urlresolvers import reverse
 from django.core.urlresolvers import reverse_lazy
 from django import http
 from django import shortcuts
+from django.utils.datastructures import SortedDict
 from django.utils.translation import ugettext_lazy as _
-from django.views import generic
 
 from horizon import exceptions
 from horizon import forms
-from horizon import messages
 from horizon import tables
 from horizon import tabs
 from horizon.utils import memoized
 from horizon import workflows
 
 from openstack_dashboard import api
-from openstack_dashboard.utils import filters
 
 from openstack_dashboard.dashboards.project.instances \
     import console as project_console
@@ -53,14 +45,11 @@ from openstack_dashboard.dashboards.project.instances \
     import tabs as project_tabs
 from openstack_dashboard.dashboards.project.instances \
     import workflows as project_workflows
-from openstack_dashboard.views import get_url_with_pagination
-
-LOG = logging.getLogger(__name__)
 
 
 class IndexView(tables.DataTableView):
     table_class = project_tables.InstancesTable
-    page_title = _("Instances")
+    template_name = 'project/instances/index.html'
 
     def has_more_data(self, table):
         return self._more
@@ -69,38 +58,18 @@ class IndexView(tables.DataTableView):
         marker = self.request.GET.get(
             project_tables.InstancesTable._meta.pagination_param, None)
         search_opts = self.get_filters({'marker': marker, 'paginate': True})
+        # Gather our instances
+        try:
+            instances, self._more = api.nova.server_list(
+                self.request,
+                search_opts=search_opts)
+        except Exception:
+            self._more = False
+            instances = []
+            exceptions.handle(self.request,
+                              _('Unable to retrieve instances.'))
 
-        instances = []
-        flavors = []
-        full_flavors = {}
-        images = []
-        image_map = {}
-
-        def _task_get_instances():
-            # Gather our instances
-            try:
-                tmp_instances, self._more = api.nova.server_list(
-                    self.request,
-                    search_opts=search_opts)
-                instances.extend(tmp_instances)
-            except Exception:
-                self._more = False
-                exceptions.handle(self.request,
-                                  _('Unable to retrieve instances.'))
-                # In case of exception when calling nova.server_list
-                # don't call api.network
-                return
-
-            # TODO(future): Explore more efficient logic to sync IP address
-            # and drop the setting OPENSTACK_INSTANCE_RETRIEVE_IP_ADDRESSES.
-            # The situation servers_update_addresses() is needed # is only
-            # when IP address of a server is updated via neutron API and
-            # nova network info cache is not synced. Precisely there is no
-            # need to check IP addresses of all serves. It is sufficient to
-            # fetch IP address information for servers recently updated.
-            if not getattr(settings,
-                           'OPENSTACK_INSTANCE_RETRIEVE_IP_ADDRESSES', True):
-                return
+        if instances:
             try:
                 api.network.servers_update_addresses(self.request, instances)
             except Exception:
@@ -109,99 +78,56 @@ class IndexView(tables.DataTableView):
                     message=_('Unable to retrieve IP addresses from Neutron.'),
                     ignore=True)
 
-        def _task_get_flavors():
-            # Gather our flavors to correlate our instances to them
+            # Gather our flavors and images and correlate our instances to them
             try:
-                tmp_flavors = api.nova.flavor_list(self.request)
-                flavors.extend(tmp_flavors)
-                full_flavors.update([(str(flavor.id), flavor)
-                                     for flavor in flavors])
+                flavors = api.nova.flavor_list(self.request)
             except Exception:
+                flavors = []
                 exceptions.handle(self.request, ignore=True)
 
-        def _task_get_images():
-            # Gather our images to correlate our instances to them
             try:
                 # TODO(gabriel): Handle pagination.
-                tmp_images = api.glance.image_list_detailed(self.request)[0]
-                images.extend(tmp_images)
-                image_map.update([(str(image.id), image) for image in images])
+                images, more, prev = api.glance.image_list_detailed(
+                    self.request)
             except Exception:
+                images = []
                 exceptions.handle(self.request, ignore=True)
 
-        with futurist.ThreadPoolExecutor(max_workers=3) as e:
-            e.submit(fn=_task_get_flavors)
-            e.submit(fn=_task_get_images)
+            full_flavors = SortedDict([(str(flavor.id), flavor)
+                                       for flavor in flavors])
+            image_map = SortedDict([(str(image.id), image)
+                                    for image in images])
 
-        non_api_filter_info = (
-            ('image_name', 'image', images),
-            ('flavor_name', 'flavor', flavors),
-        )
-        if not process_non_api_filters(search_opts, non_api_filter_info):
-            self._more = False
-            return []
+            # Loop through instances to get flavor info.
+            for instance in instances:
+                if hasattr(instance, 'image'):
+                    # Instance from image returns dict
+                    if isinstance(instance.image, dict):
+                        if instance.image.get('id') in image_map:
+                            instance.image = image_map[instance.image['id']]
 
-        _task_get_instances()
-
-        # Loop through instances to get flavor info.
-        for instance in instances:
-            if hasattr(instance, 'image'):
-                # Instance from image returns dict
-                if isinstance(instance.image, dict):
-                    if instance.image.get('id') in image_map:
-                        instance.image = image_map[instance.image.get('id')]
-                    # In case image not found in image_map, set name to empty
-                    # to avoid fallback API call to Glance in api/nova.py
-                    # until the call is deprecated in api itself
+                try:
+                    flavor_id = instance.flavor["id"]
+                    if flavor_id in full_flavors:
+                        instance.full_flavor = full_flavors[flavor_id]
                     else:
-                        instance.image['name'] = _("-")
-
-            flavor_id = instance.flavor["id"]
-            if flavor_id in full_flavors:
-                instance.full_flavor = full_flavors[flavor_id]
-            else:
-                # If the flavor_id is not in full_flavors list,
-                # put info in the log file.
-                msg = ('Unable to retrieve flavor "%s" for instance "%s".'
-                       % (flavor_id, instance.id))
-                LOG.info(msg)
-
+                        # If the flavor_id is not in full_flavors list,
+                        # get it via nova api.
+                        instance.full_flavor = api.nova.flavor_get(
+                            self.request, flavor_id)
+                except Exception:
+                    msg = _('Unable to retrieve instance size information.')
+                    exceptions.handle(self.request, msg)
         return instances
 
-
-def process_non_api_filters(search_opts, non_api_filter_info):
-    """Process filters by non-API fields
-
-    There are cases where it is useful to provide a filter field
-    which does not exist in a resource in a backend service.
-    For example, nova server list provides 'image' field with image ID
-    but 'image name' is more useful for GUI users.
-    This function replaces fake fields into corresponding real fields.
-
-    The format of non_api_filter_info is a tuple/list of
-    (fake_field, real_field, resources).
-
-    This returns True if further lookup is required.
-    It returns False if there are no matching resources,
-    for example, if no corresponding real field exists.
-    """
-    for fake_field, real_field, resources in non_api_filter_info:
-        if not _swap_filter(resources, search_opts, fake_field, real_field):
-            return False
-    return True
-
-
-def _swap_filter(resources, search_opts, fake_field, real_field):
-    if fake_field not in search_opts:
-        return True
-    filter_string = search_opts[fake_field]
-    matched = [resource for resource in resources
-               if resource.name.lower() == filter_string.lower()]
-    if not matched:
-        return False
-    search_opts[real_field] = matched[0].id
-    del search_opts[fake_field]
-    return True
+    def get_filters(self, filters):
+        filter_field = self.table.get_filter_field()
+        filter_action = self.table._meta._filter_action
+        if filter_action.is_api_filter(filter_field):
+            filter_string = self.table.get_filter_string()
+            if filter_field and filter_string:
+                filters[filter_field] = filter_string
+        return filters
 
 
 class LaunchInstanceView(workflows.WorkflowView):
@@ -211,44 +137,29 @@ class LaunchInstanceView(workflows.WorkflowView):
         initial = super(LaunchInstanceView, self).get_initial()
         initial['project_id'] = self.request.user.tenant_id
         initial['user_id'] = self.request.user.id
-        defaults = getattr(settings, 'LAUNCH_INSTANCE_DEFAULTS', {})
-        initial['config_drive'] = defaults.get('config_drive', False)
         return initial
 
 
 def console(request, instance_id):
-    data = _('Unable to get log for instance "%s".') % instance_id
-    tail = request.GET.get('length')
-    if tail and not tail.isdigit():
-        msg = _('Log length must be a nonnegative integer.')
-        messages.warning(request, msg)
-    else:
-        try:
-            data = api.nova.server_console_output(request,
-                                                  instance_id,
-                                                  tail_length=tail)
-        except Exception:
-            exceptions.handle(request, ignore=True)
-    return http.HttpResponse(data.encode('utf-8'), content_type='text/plain')
-
-
-def auto_console(request, instance_id):
-    console_type = getattr(settings, 'CONSOLE_TYPE', 'AUTO')
     try:
-        instance = api.nova.server_get(request, instance_id)
-        console_url = project_console.get_console(request, console_type,
-                                                  instance)[1]
-        return shortcuts.redirect(console_url)
+        # TODO(jakedahn): clean this up once the api supports tailing.
+        tail = request.GET.get('length', None)
+        data = api.nova.server_console_output(request,
+                                              instance_id,
+                                              tail_length=tail)
     except Exception:
-        redirect = reverse("horizon:project:instances:index")
-        msg = _('Unable to get console for instance "%s".') % instance_id
-        exceptions.handle(request, msg, redirect=redirect)
+        data = _('Unable to get log for instance "%s".') % instance_id
+        exceptions.handle(request, ignore=True)
+    response = http.HttpResponse(content_type='text/plain')
+    response.write(data)
+    response.flush()
+    return response
 
 
 def vnc(request, instance_id):
     try:
         instance = api.nova.server_get(request, instance_id)
-        console_url = project_console.get_console(request, 'VNC', instance)[1]
+        console_url = project_console.get_console(request, 'VNC', instance)
         return shortcuts.redirect(console_url)
     except Exception:
         redirect = reverse("horizon:project:instances:index")
@@ -256,22 +167,10 @@ def vnc(request, instance_id):
         exceptions.handle(request, msg, redirect=redirect)
 
 
-def mks(request, instance_id):
-    try:
-        instance = api.nova.server_get(request, instance_id)
-        console_url = project_console.get_console(request, 'MKS', instance)[1]
-        return shortcuts.redirect(console_url)
-    except Exception:
-        redirect = reverse("horizon:project:instances:index")
-        msg = _('Unable to get MKS console for instance "%s".') % instance_id
-        exceptions.handle(request, msg, redirect=redirect)
-
-
 def spice(request, instance_id):
     try:
         instance = api.nova.server_get(request, instance_id)
-        console_url = project_console.get_console(request, 'SPICE',
-                                                  instance)[1]
+        console_url = project_console.get_console(request, 'SPICE', instance)
         return shortcuts.redirect(console_url)
     except Exception:
         redirect = reverse("horizon:project:instances:index")
@@ -282,41 +181,12 @@ def spice(request, instance_id):
 def rdp(request, instance_id):
     try:
         instance = api.nova.server_get(request, instance_id)
-        console_url = project_console.get_console(request, 'RDP', instance)[1]
+        console_url = project_console.get_console(request, 'RDP', instance)
         return shortcuts.redirect(console_url)
     except Exception:
         redirect = reverse("horizon:project:instances:index")
         msg = _('Unable to get RDP console for instance "%s".') % instance_id
         exceptions.handle(request, msg, redirect=redirect)
-
-
-class SerialConsoleView(generic.TemplateView):
-    template_name = 'serial_console.html'
-
-    def get_context_data(self, **kwargs):
-        context = super(SerialConsoleView, self).get_context_data(**kwargs)
-        instance = None
-        try:
-            instance = api.nova.server_get(self.request,
-                                           self.kwargs['instance_id'])
-        except Exception:
-            context["error_message"] = _(
-                "Cannot find instance %s.") % self.kwargs['instance_id']
-            # name is unknown, so leave it blank for the window title
-            # in full-screen mode, so only the instance id is shown.
-            context['page_title'] = self.kwargs['instance_id']
-            return context
-        context['page_title'] = "%s (%s)" % (instance.name, instance.id)
-        try:
-            console_url = project_console.get_console(self.request,
-                                                      "SERIAL", instance)[1]
-            context["console_url"] = console_url
-            context["protocols"] = "['binary', 'base64']"
-        except exceptions.NotAvailable:
-            context["error_message"] = _(
-                "Cannot get console for instance %s.") % self.kwargs[
-                'instance_id']
-        return context
 
 
 class UpdateView(workflows.WorkflowView):
@@ -349,8 +219,6 @@ class RebuildView(forms.ModalFormView):
     form_class = project_forms.RebuildInstanceForm
     template_name = 'project/instances/rebuild.html'
     success_url = reverse_lazy('horizon:project:instances:index')
-    page_title = _("Rebuild Instance")
-    submit_label = page_title
 
     def get_context_data(self, **kwargs):
         context = super(RebuildView, self).get_context_data(**kwargs)
@@ -366,7 +234,6 @@ class DecryptPasswordView(forms.ModalFormView):
     form_class = project_forms.DecryptPasswordInstanceForm
     template_name = 'project/instances/decryptpassword.html'
     success_url = reverse_lazy('horizon:project:instances:index')
-    page_title = _("Retrieve Instance Password")
 
     def get_context_data(self, **kwargs):
         context = super(DecryptPasswordView, self).get_context_data(**kwargs)
@@ -381,32 +248,17 @@ class DecryptPasswordView(forms.ModalFormView):
 
 class DetailView(tabs.TabView):
     tab_group_class = project_tabs.InstanceDetailTabs
-    template_name = 'horizon/common/_detail.html'
+    template_name = 'project/instances/detail.html'
     redirect_url = 'horizon:project:instances:index'
-    page_title = "{{ instance.name|default:instance.id }}"
-    image_url = 'horizon:project:images:images:detail'
-    volume_url = 'horizon:project:volumes:detail'
 
     def get_context_data(self, **kwargs):
         context = super(DetailView, self).get_context_data(**kwargs)
         instance = self.get_data()
-        if instance.image:
-            instance.image_url = reverse(self.image_url,
-                                         args=[instance.image['id']])
-        instance.volume_url = self.volume_url
         context["instance"] = instance
-        context["url"] = get_url_with_pagination(
-            self.request,
-            project_tables.InstancesTable._meta.pagination_param,
-            project_tables.InstancesTable._meta.prev_pagination_param,
-            self.redirect_url)
-
-        context["actions"] = self._get_actions(instance)
-        return context
-
-    def _get_actions(self, instance):
         table = project_tables.InstancesTable(self.request)
-        return table.render_row_actions(instance)
+        context["url"] = reverse(self.redirect_url)
+        context["actions"] = table.render_row_actions(instance)
+        return context
 
     @memoized.memoized_method
     def get_data(self):
@@ -424,56 +276,47 @@ class DetailView(tabs.TabView):
             # Need to raise here just in case.
             raise exceptions.Http302(redirect)
 
-        choices = project_tables.STATUS_DISPLAY_CHOICES
-        instance.status_label = (
-            filters.get_display_label(choices, instance.status))
+        status_label = [label for (value, label) in
+                        project_tables.STATUS_DISPLAY_CHOICES
+                        if value.lower() == (instance.status or '').lower()]
+        if status_label:
+            instance.status_label = status_label[0]
+        else:
+            instance.status_label = instance.status
 
-        def _task_get_volumes():
-            try:
-                instance.volumes = api.nova.instance_volumes_list(self.request,
-                                                                  instance_id)
-                # Sort by device name
-                instance.volumes.sort(key=lambda vol: vol.device)
-            except Exception:
-                msg = _('Unable to retrieve volume list for instance '
-                        '"%(name)s" (%(id)s).') % {'name': instance.name,
-                                                   'id': instance_id}
-                exceptions.handle(self.request, msg, ignore=True)
+        try:
+            instance.volumes = api.nova.instance_volumes_list(self.request,
+                                                              instance_id)
+            # Sort by device name
+            instance.volumes.sort(key=lambda vol: vol.device)
+        except Exception:
+            msg = _('Unable to retrieve volume list for instance '
+                    '"%s".') % instance_id
+            exceptions.handle(self.request, msg, ignore=True)
 
-        def _task_get_flavor():
-            try:
-                instance.full_flavor = api.nova.flavor_get(
-                    self.request, instance.flavor["id"])
-            except Exception:
-                msg = _('Unable to retrieve flavor information for instance '
-                        '"%(name)s" (%(id)s).') % {'name': instance.name,
-                                                   'id': instance_id}
-                exceptions.handle(self.request, msg, ignore=True)
+        try:
+            instance.full_flavor = api.nova.flavor_get(
+                self.request, instance.flavor["id"])
+        except Exception:
+            msg = _('Unable to retrieve flavor information for instance '
+                    '"%s".') % instance_id,
+            exceptions.handle(self.request, msg, ignore=True)
 
-        def _task_get_security_groups():
-            try:
-                instance.security_groups = api.neutron.server_security_groups(
-                    self.request, instance_id)
-            except Exception:
-                msg = _('Unable to retrieve security groups for instance '
-                        '"%(name)s" (%(id)s).') % {'name': instance.name,
-                                                   'id': instance_id}
-                exceptions.handle(self.request, msg, ignore=True)
+        try:
+            instance.security_groups = api.network.server_security_groups(
+                self.request, instance_id)
+        except Exception:
+            msg = _('Unable to retrieve security groups for instance '
+                    '"%s".') % instance_id
+            exceptions.handle(self.request, msg, ignore=True)
 
-        def _task_update_addresses():
-            try:
-                api.network.servers_update_addresses(self.request, [instance])
-            except Exception:
-                msg = _('Unable to retrieve IP addresses from Neutron for '
-                        'instance "%(name)s" (%(id)s).') \
-                    % {'name': instance.name, 'id': instance_id}
-                exceptions.handle(self.request, msg, ignore=True)
-
-        with futurist.ThreadPoolExecutor(max_workers=4) as e:
-            e.submit(fn=_task_get_volumes)
-            e.submit(fn=_task_get_flavor)
-            e.submit(fn=_task_get_security_groups)
-            e.submit(fn=_task_update_addresses)
+        try:
+            api.network.servers_update_addresses(self.request, [instance])
+        except Exception:
+            exceptions.handle(
+                self.request,
+                _('Unable to retrieve IP addresses from Neutron for instance '
+                  '"%s".') % instance_id, ignore=True)
 
         return instance
 
@@ -519,7 +362,7 @@ class ResizeView(workflows.WorkflowView):
     def get_flavors(self, *args, **kwargs):
         try:
             flavors = api.nova.flavor_list(self.request)
-            return OrderedDict((str(flavor.id), flavor) for flavor in flavors)
+            return SortedDict((str(flavor.id), flavor) for flavor in flavors)
         except Exception:
             redirect = reverse("horizon:project:instances:index")
             exceptions.handle(self.request,
@@ -537,90 +380,3 @@ class ResizeView(workflows.WorkflowView):
                  'old_flavor_name': getattr(_object, 'flavor_name', ''),
                  'flavors': self.get_flavors()})
         return initial
-
-
-class AttachInterfaceView(forms.ModalFormView):
-    form_class = project_forms.AttachInterface
-    template_name = 'project/instances/attach_interface.html'
-    page_title = _("Attach Interface")
-    form_id = "attach_interface_form"
-    submit_label = _("Attach Interface")
-    success_url = reverse_lazy('horizon:project:instances:index')
-
-    def get_context_data(self, **kwargs):
-        context = super(AttachInterfaceView, self).get_context_data(**kwargs)
-        context['instance_id'] = self.kwargs['instance_id']
-        return context
-
-    def get_initial(self):
-        args = {'instance_id': self.kwargs['instance_id']}
-        submit_url = "horizon:project:instances:attach_interface"
-        self.submit_url = reverse(submit_url, kwargs=args)
-        return args
-
-
-class AttachVolumeView(forms.ModalFormView):
-    form_class = project_forms.AttachVolume
-    template_name = 'project/instances/attach_volume.html'
-    page_title = _("Attach Volume")
-    modal_id = "attach_volume_modal"
-    submit_label = _("Attach Volume")
-    success_url = reverse_lazy('horizon:project:instances:index')
-
-    def get_initial(self):
-        args = {'instance_id': self.kwargs['instance_id']}
-        submit_url = "horizon:project:instances:attach_volume"
-        self.submit_url = reverse(submit_url, kwargs=args)
-        try:
-            volume_list = api.cinder.volume_list(self.request)
-        except Exception:
-            volume_list = []
-            exceptions.handle(self.request,
-                              _("Unable to retrieve volume information."))
-        return {"instance_id": self.kwargs["instance_id"],
-                "volume_list": volume_list}
-
-    def get_context_data(self, **kwargs):
-        context = super(AttachVolumeView, self).get_context_data(**kwargs)
-        context['instance_id'] = self.kwargs['instance_id']
-        return context
-
-
-class DetachVolumeView(forms.ModalFormView):
-    form_class = project_forms.DetachVolume
-    template_name = 'project/instances/detach_volume.html'
-    page_title = _("Detach Volume")
-    modal_id = "detach_volume_modal"
-    submit_label = _("Detach Volume")
-    success_url = reverse_lazy('horizon:project:instances:index')
-
-    def get_initial(self):
-        args = {'instance_id': self.kwargs['instance_id']}
-        submit_url = "horizon:project:instances:detach_volume"
-        self.submit_url = reverse(submit_url, kwargs=args)
-        return {"instance_id": self.kwargs["instance_id"]}
-
-    def get_context_data(self, **kwargs):
-        context = super(DetachVolumeView, self).get_context_data(**kwargs)
-        context['instance_id'] = self.kwargs['instance_id']
-        return context
-
-
-class DetachInterfaceView(forms.ModalFormView):
-    form_class = project_forms.DetachInterface
-    template_name = 'project/instances/detach_interface.html'
-    page_title = _("Detach Interface")
-    form_id = "detach_interface_form"
-    submit_label = _("Detach Interface")
-    success_url = reverse_lazy('horizon:project:instances:index')
-
-    def get_context_data(self, **kwargs):
-        context = super(DetachInterfaceView, self).get_context_data(**kwargs)
-        context['instance_id'] = self.kwargs['instance_id']
-        return context
-
-    def get_initial(self):
-        args = {"instance_id": self.kwargs["instance_id"]}
-        submit_url = "horizon:project:instances:detach_interface"
-        self.submit_url = reverse(submit_url, kwargs=args)
-        return args

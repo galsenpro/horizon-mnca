@@ -16,22 +16,19 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import logging
 import operator
 
-from django.conf import settings
 from django.core.urlresolvers import reverse
 from django.core.urlresolvers import reverse_lazy
-from django.utils.decorators import method_decorator
+from django.utils.decorators import method_decorator  # noqa
 from django.utils.translation import ugettext_lazy as _
-from django.views.decorators.debug import sensitive_post_parameters
+from django.views.decorators.debug import sensitive_post_parameters  # noqa
 
 from horizon import exceptions
 from horizon import forms
 from horizon import messages
 from horizon import tables
 from horizon.utils import memoized
-from horizon import views
 
 from openstack_dashboard import api
 from openstack_dashboard import policy
@@ -40,41 +37,20 @@ from openstack_dashboard.dashboards.identity.users \
     import forms as project_forms
 from openstack_dashboard.dashboards.identity.users \
     import tables as project_tables
-from openstack_dashboard.utils import identity
-
-LOG = logging.getLogger(__name__)
 
 
 class IndexView(tables.DataTableView):
     table_class = project_tables.UsersTable
     template_name = 'identity/users/index.html'
-    page_title = _("Users")
-
-    def needs_filter_first(self, table):
-        return self._needs_filter_first
 
     def get_data(self):
         users = []
-        filters = self.get_filters()
-
-        self._needs_filter_first = False
-
+        domain_context = self.request.session.get('domain_context', None)
         if policy.check((("identity", "identity:list_users"),),
                         self.request):
-
-            # If filter_first is set and if there are not other filters
-            # selected, then search criteria must be provided
-            # and return an empty list
-            filter_first = getattr(settings, 'FILTER_DATA_FIRST', {})
-            if filter_first.get('identity.users', False) and len(filters) == 0:
-                self._needs_filter_first = True
-                return users
-
-            domain_id = identity.get_domain_id_for_operation(self.request)
             try:
                 users = api.keystone.user_list(self.request,
-                                               domain=domain_id,
-                                               filters=filters)
+                                               domain=domain_context)
             except Exception:
                 exceptions.handle(self.request,
                                   _('Unable to retrieve user list.'))
@@ -82,8 +58,7 @@ class IndexView(tables.DataTableView):
                           self.request):
             try:
                 user = api.keystone.user_get(self.request,
-                                             self.request.user.id,
-                                             admin=False)
+                                             self.request.user.id)
                 users.append(user)
             except Exception:
                 exceptions.handle(self.request,
@@ -91,23 +66,16 @@ class IndexView(tables.DataTableView):
         else:
             msg = _("Insufficient privilege level to view user information.")
             messages.info(self.request, msg)
-
-        if api.keystone.VERSIONS.active >= 3:
-            domain_lookup = api.keystone.domain_lookup(self.request)
-            for u in users:
-                u.domain_name = domain_lookup.get(u.domain_id)
         return users
 
 
 class UpdateView(forms.ModalFormView):
-    template_name = 'identity/users/update.html'
-    form_id = "update_user_form"
     form_class = project_forms.UpdateUserForm
-    submit_label = _("Update User")
-    submit_url = "horizon:identity:users:update"
+    template_name = 'identity/users/update.html'
     success_url = reverse_lazy('horizon:identity:users:index')
-    page_title = _("Update User")
 
+    @method_decorator(sensitive_post_parameters('password',
+                                                'confirm_password'))
     def dispatch(self, *args, **kwargs):
         return super(UpdateView, self).dispatch(*args, **kwargs)
 
@@ -119,56 +87,39 @@ class UpdateView(forms.ModalFormView):
         except Exception:
             redirect = reverse("horizon:identity:users:index")
             exceptions.handle(self.request,
-                              _('Unable to retrieve user information.'),
+                              _('Unable to update user.'),
                               redirect=redirect)
 
     def get_context_data(self, **kwargs):
         context = super(UpdateView, self).get_context_data(**kwargs)
-        args = (self.kwargs['user_id'],)
-        context['submit_url'] = reverse(self.submit_url, args=args)
+        context['user'] = self.get_object()
         return context
 
     def get_initial(self):
         user = self.get_object()
         domain_id = getattr(user, "domain_id", None)
         domain_name = ''
-        # Retrieve the domain name where the project belongs
+        # Retrieve the domain name where the project belong
         if api.keystone.VERSIONS.active >= 3:
             try:
-                if policy.check((("identity", "identity:get_domain"),),
-                                self.request):
-                    domain = api.keystone.domain_get(self.request, domain_id)
-                    domain_name = domain.name
-
-                else:
-                    domain = api.keystone.get_default_domain(self.request)
-                    domain_name = domain.get('name')
-
+                domain = api.keystone.domain_get(self.request,
+                                                 domain_id)
+                domain_name = domain.name
             except Exception:
                 exceptions.handle(self.request,
                                   _('Unable to retrieve project domain.'))
-
-        data = {'domain_id': domain_id,
+        return {'domain_id': domain_id,
                 'domain_name': domain_name,
                 'id': user.id,
                 'name': user.name,
                 'project': user.project_id,
-                'email': getattr(user, 'email', None),
-                'description': getattr(user, 'description', None)}
-        if api.keystone.VERSIONS.active >= 3:
-            for key in getattr(settings, 'USER_TABLE_EXTRA_INFO', {}):
-                data[key] = getattr(user, key, None)
-        return data
+                'email': getattr(user, 'email', None)}
 
 
 class CreateView(forms.ModalFormView):
-    template_name = 'identity/users/create.html'
-    form_id = "create_user_form"
     form_class = project_forms.CreateUserForm
-    submit_label = _("Create User")
-    submit_url = reverse_lazy("horizon:identity:users:create")
+    template_name = 'identity/users/create.html'
     success_url = reverse_lazy('horizon:identity:users:index')
-    page_title = _("Create User")
 
     @method_decorator(sensitive_post_parameters('password',
                                                 'confirm_password'))
@@ -195,105 +146,3 @@ class CreateView(forms.ModalFormView):
         return {'domain_id': domain.id,
                 'domain_name': domain.name,
                 'role_id': getattr(default_role, "id", None)}
-
-
-class DetailView(views.HorizonTemplateView):
-    template_name = 'identity/users/detail.html'
-    page_title = "{{ user.name }}"
-
-    def get_context_data(self, **kwargs):
-        context = super(DetailView, self).get_context_data(**kwargs)
-        user = self.get_data()
-        tenant = self.get_tenant(user.project_id)
-        table = project_tables.UsersTable(self.request)
-        domain_id = getattr(user, "domain_id", None)
-        domain_name = ''
-        if api.keystone.VERSIONS.active >= 3:
-            try:
-                if policy.check((("identity", "identity:get_domain"),),
-                                self.request):
-                    domain = api.keystone.domain_get(
-                        self.request, domain_id)
-                    domain_name = domain.name
-                else:
-                    domain = api.keystone.get_default_domain(self.request)
-                    domain_name = domain.get('name')
-            except Exception:
-                exceptions.handle(self.request,
-                                  _('Unable to retrieve project domain.'))
-            context["description"] = getattr(user, "description", _("None"))
-            extra_info = getattr(settings, 'USER_TABLE_EXTRA_INFO', {})
-            context['extras'] = dict(
-                (display_key, getattr(user, key, ''))
-                for key, display_key in extra_info.items())
-        context["user"] = user
-        if tenant:
-            context["tenant_name"] = tenant.name
-        context["domain_id"] = domain_id
-        context["domain_name"] = domain_name
-        context["url"] = self.get_redirect_url()
-        context["actions"] = table.render_row_actions(user)
-        return context
-
-    @memoized.memoized_method
-    def get_tenant(self, project_id):
-        tenant = None
-        if project_id:
-            try:
-                tenant = api.keystone.tenant_get(self.request, project_id)
-            except Exception as e:
-                LOG.error('Failed to get tenant %(project_id)s: %(reason)s',
-                          {'project_id': project_id, 'reason': e})
-        return tenant
-
-    @memoized.memoized_method
-    def get_data(self):
-        try:
-            user_id = self.kwargs['user_id']
-            user = api.keystone.user_get(self.request, user_id, admin=False)
-        except Exception:
-            redirect = self.get_redirect_url()
-            exceptions.handle(self.request,
-                              _('Unable to retrieve user details.'),
-                              redirect=redirect)
-        return user
-
-    def get_redirect_url(self):
-        return reverse('horizon:identity:users:index')
-
-
-class ChangePasswordView(forms.ModalFormView):
-    template_name = 'identity/users/change_password.html'
-    form_id = "change_user_password_form"
-    form_class = project_forms.ChangePasswordForm
-    submit_url = "horizon:identity:users:change_password"
-    submit_label = _("Save")
-    success_url = reverse_lazy('horizon:identity:users:index')
-    page_title = _("Change Password")
-
-    @method_decorator(sensitive_post_parameters('password',
-                                                'confirm_password'))
-    def dispatch(self, *args, **kwargs):
-        return super(ChangePasswordView, self).dispatch(*args, **kwargs)
-
-    @memoized.memoized_method
-    def get_object(self):
-        try:
-            return api.keystone.user_get(self.request, self.kwargs['user_id'],
-                                         admin=False)
-        except Exception:
-            redirect = reverse("horizon:identity:users:index")
-            exceptions.handle(self.request,
-                              _('Unable to retrieve user information.'),
-                              redirect=redirect)
-
-    def get_context_data(self, **kwargs):
-        context = super(ChangePasswordView, self).get_context_data(**kwargs)
-        args = (self.kwargs['user_id'],)
-        context['submit_url'] = reverse(self.submit_url, args=args)
-        return context
-
-    def get_initial(self):
-        user = self.get_object()
-        return {'id': self.kwargs['user_id'],
-                'name': user.name}

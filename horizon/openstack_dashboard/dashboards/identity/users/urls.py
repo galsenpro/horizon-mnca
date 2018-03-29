@@ -16,29 +16,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-
-from django.conf import settings
+from django.conf.urls import patterns
 from django.conf.urls import url
-from django.utils.translation import ugettext_lazy as _
 
-from horizon.browsers.views import AngularIndexView
 from openstack_dashboard.dashboards.identity.users import views
 
-
-if settings.ANGULAR_FEATURES.get('users_panel', False):
-    title = _("Users")
-    # new angular panel
-    urlpatterns = [
-        url(r'^$', AngularIndexView.as_view(title=title), name='index'),
-    ]
-else:
-    urlpatterns = [
-        url(r'^$', views.IndexView.as_view(), name='index'),
-        url(r'^(?P<user_id>[^/]+)/update/$',
-            views.UpdateView.as_view(), name='update'),
-        url(r'^create/$', views.CreateView.as_view(), name='create'),
-        url(r'^(?P<user_id>[^/]+)/detail/$',
-            views.DetailView.as_view(), name='detail'),
-        url(r'^(?P<user_id>[^/]+)/change_password/$',
-            views.ChangePasswordView.as_view(), name='change_password'),
-    ]
+urlpatterns = patterns(
+    'openstack_dashboard.dashboards.identity.users.views',
+    url(r'^$', views.IndexView.as_view(), name='index'),
+    url(r'^(?P<user_id>[^/]+)/update/$',
+        views.UpdateView.as_view(), name='update'),
+    url(r'^create/$', views.CreateView.as_view(), name='create'))

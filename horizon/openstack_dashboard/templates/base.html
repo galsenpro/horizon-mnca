@@ -1,6 +1,6 @@
 {% load branding i18n %}
-{% load context_selection %}
-{% load breadcrumb_nav %}
+
+{% load staticfiles %}
 
 <!DOCTYPE html>
 <html>
@@ -9,63 +9,151 @@
     <meta content='text/html; charset=utf-8' http-equiv='Content-Type' />
     <meta name="viewport" content="width=device-width, initial-scale=1">
     {% include "horizon/_custom_meta.html" %}
-    <title>{% block title %}{% endblock %} - {% site_branding %}</title>
+    <title>FIWARE Lab Identity Manager - {% block title %}{% endblock %}</title>
     {% comment %} Load CSS sheets before Javascript  {% endcomment %}
     {% block css %}
       {% include "_stylesheets.html" %}
     {% endblock %}
-    {% iframe_embed_settings %}
     {% include "horizon/_conf.html" %}
     {% include "horizon/client_side/_script_loader.html" %}
-    {% include "horizon/_custom_head_js.html" %}
-    {% block ng_route_base %} {% endblock %}
-  </head>
-  <body id="{% block body_id %}{% endblock %}" ng-app='horizon.app' ng-strict-di>
-    <noscript>
-      <div class="alert alert-danger text-center javascript-disabled">
-        {% trans "This application requires JavaScript to be enabled in your web browser." %}
-      </div>
-    </noscript>
-    {% block content %}
-      <div class='topbar'>
-        {% include "header/_header.html" %}
-      </div>
-      <div id='main_content'>
-        {% include "horizon/_messages.html" %}
-        {% block sidebar %}
-          {% include 'horizon/common/_sidebar.html' %}
-        {% endblock %}
-        <div id='content_body'>
-          <div class='container-fluid'>
-            <div class="row">
-              <div class="col-xs-12">
-                <div class="page-breadcrumb">
-                  {% block breadcrumb_nav %}
-                    {% breadcrumb_nav %}
-                  {% endblock %}
-                </div>
+    {% include "_custom_head_js.html" %}
 
-                {% block page_header %}
-                  {% include "horizon/common/_page_header.html" with title=page_title %}
-                {% endblock %}
-                {% block main %}{% endblock %}
-              </div>
-            </div>
+    <link rel="shortcut icon" href="{{ STATIC_URL }}dashboard/img/icons/favicon.ico"/>
+    <link rel="apple-touch-icon" href="{{ STATIC_URL }}dashboard/img/icons/apple-touch-icon-57-precomposed.png">
+    <link rel="apple-touch-icon" sizes="72x72" href="{{ STATIC_URL }}dashboard/img/icons/apple-touch-icon-72-precomposed.png">
+    <link rel="apple-touch-icon" sizes="144x144" href="{{ STATIC_URL }}dashboard/img/icons/apple-touch-icon-144-precomposed.png">
+
+  </head>
+  <body id="{% block body_id %}{% endblock %}" ng-app='hz'>
+    {% block content %}
+
+      {% include "_header.html" %}
+
+      <div id="container" class="container-fluid wrap">
+        <div id='main_content' class="wrap">
+          {% block sidebar %}
+            {% include 'horizon/common/_sidebar.html' %}
+          {% endblock %}
+          <div id='content_body'>
+            {% block page_header %}{% endblock %}
+            {% block main %}{% endblock %}
           </div>
         </div>
       </div>
+      {% include "horizon/_messages.html" %}
     {% endblock %}
     <div id="footer">
-      {% block footer %}
-        {% include "_footer.html" %}
-      {% endblock %}
+      {% block footer %}{% endblock %}
     </div>
     {% block js %}
       {% include "horizon/_scripts.html" %}
     {% endblock %}
     <div id="modal_wrapper"></div>
+    {% include '_footer.html' %}
 
-        <footer id="footer">
-        </footer>
+
+<script src="{% static 'mnca/js/jsonform/brutusin-json-forms.min.js' %}"></script>
+<script src="{% static 'mnca/lib/jquery-1.11.1.min.js' %}"></script>
+<script src="{% static 'mnca/dist/jquery.bootgrid.js' %}"></script>
+<script src="{% static 'mnca/dist/jquery.bootgrid.fa.js' %}"></script>
+<script src="{% static 'mnca/script.js' %}"></script>
+
+	<script type="text/javascript">
+         var bf = brutusin["json-forms"].create({
+  "$schema": "http://json-schema.org/draft-06/schema#",
+    "title": "Service",
+    "description": "A service from idas",
+  "type": "object",
+  "properties": {
+	    "service": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "apikey": {
+                     "helpValue": "The unique identifier for a service",
+                        "type": "string",
+                        "title": "Api Key of service",
+                        "readOnly": true
+                    },
+                    "servicename": {
+                        "type": "string",
+                        "title": "Name of service",
+                        "required": true
+                    },
+                    "subservice": {
+                        "type": "string",
+                        "title": "Name of Subservice",
+                        "required": true
+                    },
+                    "entity_type": {
+                        "type": "string",
+                        "title": "Entity type",
+                        "required": true
+                    },
+                    "attributes": {
+                        "type": "array",
+                        "title": "Attributes",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "hidden",
+                                    "title": "idattribute",
+                                    "default": 1,
+                                    "required": true
+                                },
+                                "name": {
+                                    "type": "string",
+                                    "title": "Name of attribute",
+                                    "required": true
+                                },
+                                "type": {
+                                    "type": "string",
+                                    "title": "Type of attribute",
+                                    "enum": ["Number", "String", "Array"],
+                                    "required": true
+                                },
+                                "object_id": {
+                                    "type": "string",
+                                    "title": "Object Id",
+                                    "required": true
+                                }
+                            }
+                        }
+                    },
+                    "commands": {
+                        "type": "array",
+                        "title": "Commands",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "hidden",
+                                    "title": "idattribute",
+                                    "default": 1,
+                                    "required": true
+                                },
+                                "name": {
+                                    "type": "string",
+                                    "title": "Command",
+                                    "required": true
+                                }
+                            }
+                        }
+                    }
+                }
+
+            }
+        }
+  }
+
+
+});
+var container = document.getElementById('container');
+bf.render(container);
+    </script>
+
   </body>
 </html>

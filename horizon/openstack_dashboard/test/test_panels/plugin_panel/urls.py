@@ -10,10 +10,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from django.conf.urls import patterns
 from django.conf.urls import url
 
 from openstack_dashboard.test.test_panels.plugin_panel import views
 
-urlpatterns = [
+urlpatterns = patterns(
+    '',
     url(r'^$', views.IndexView.as_view(), name='index'),
-]
+)

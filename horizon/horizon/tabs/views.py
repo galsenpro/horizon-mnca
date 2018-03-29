@@ -11,15 +11,16 @@
 # under the License.
 
 from django import http
+from django.views import generic
 
 from horizon import exceptions
 from horizon import tables
-from horizon.tabs.base import TableTab
-from horizon import views
+from horizon.tabs.base import TableTab  # noqa
 
 
-class TabView(views.HorizonTemplateView):
-    """A generic view for displaying a :class:`horizon.tabs.TabGroup`.
+class TabView(generic.TemplateView):
+    """A generic class-based view for displaying a
+    :class:`horizon.tabs.TabGroup`.
 
     This view handles selecting specific tabs and deals with AJAX requests
     gracefully.
@@ -56,9 +57,8 @@ class TabView(views.HorizonTemplateView):
         return context
 
     def handle_tabbed_response(self, tab_group, context):
-        """Sends back an AJAX-appropriate response for the tab group if needed.
-
-        Otherwise renders the response as normal.
+        """Sends back an AJAX-appropriate response for the tab group if
+        required, otherwise renders the response as normal.
         """
         if self.request.is_ajax():
             if tab_group.selected:
@@ -71,6 +71,16 @@ class TabView(views.HorizonTemplateView):
         context = self.get_context_data(**kwargs)
         return self.handle_tabbed_response(context["tab_group"], context)
 
+    def render_to_response(self, *args, **kwargs):
+        response = super(TabView, self).render_to_response(*args, **kwargs)
+        # Because Django's TemplateView uses the TemplateResponse class
+        # to provide deferred rendering (which is usually helpful), if
+        # a tab group raises an Http302 redirect (from exceptions.handle for
+        # example) the exception is actually raised *after* the final pass
+        # of the exception-handling middleware.
+        response.render()
+        return response
+
 
 class TabbedTableView(tables.MultiTableMixin, TabView):
     def __init__(self, *args, **kwargs):
@@ -79,11 +89,10 @@ class TabbedTableView(tables.MultiTableMixin, TabView):
         self._table_dict = {}
 
     def load_tabs(self):
-        """Loads the tab group.
-
-        It compiles the table instances for each table attached to
-        any :class:`horizon.tabs.TableTab` instances on the tab group.
-        This step is necessary before processing any tab or table actions.
+        """Loads the tab group, and compiles the table instances for each
+        table attached to any :class:`horizon.tabs.TableTab` instances on
+        the tab group. This step is necessary before processing any
+        tab or table actions.
         """
         tab_group = self.get_tabs(self.request, **self.kwargs)
         tabs = tab_group.get_tabs()
@@ -100,12 +109,10 @@ class TabbedTableView(tables.MultiTableMixin, TabView):
         return {}
 
     def handle_table(self, table_dict):
-        """Loads the table data based on a given table_dict and handles them.
-
-        For the given dict containing a ``DataTable`` and a ``TableTab``
+        """For the given dict containing a ``DataTable`` and a ``TableTab``
         instance, it loads the table data for that tab and calls the
-        table's :meth:`~horizon.tables.DataTable.maybe_handle` method.
-        The return value will be the result of ``maybe_handle``.
+        table's :meth:`~horizon.tables.DataTable.maybe_handle` method. The
+        return value will be the result of ``maybe_handle``.
         """
         table = table_dict['table']
         tab = table_dict['tab']

@@ -14,7 +14,6 @@ from __future__ import division
 
 import datetime
 
-from django.conf import settings
 from django.utils import timezone
 from django.utils.translation import ugettext_lazy as _
 
@@ -23,28 +22,23 @@ from horizon import forms
 from horizon import messages
 
 from openstack_dashboard import api
+from openstack_dashboard.usage import quotas
 
 
 class BaseUsage(object):
-    show_deleted = False
+    show_terminated = False
 
     def __init__(self, request, project_id=None):
         self.project_id = project_id or request.user.tenant_id
         self.request = request
         self.summary = {}
         self.usage_list = []
+        self.limits = {}
+        self.quotas = {}
 
     @property
     def today(self):
         return timezone.now()
-
-    @property
-    def first_day(self):
-        days_range = getattr(settings, 'OVERVIEW_DAYS_RANGE', 1)
-        if days_range:
-            return self.today.date() - datetime.timedelta(days=days_range)
-        else:
-            return datetime.date(self.today.year, self.today.month, 1)
 
     @staticmethod
     def get_start(year, month, day):
@@ -63,8 +57,7 @@ class BaseUsage(object):
 
     def get_date_range(self):
         if not hasattr(self, "start") or not hasattr(self, "end"):
-            args_start = (self.first_day.year, self.first_day.month,
-                          self.first_day.day)
+            args_start = (self.today.year, self.today.month, 1)
             args_end = (self.today.year, self.today.month, self.today.day)
             form = self.get_form()
             if form.is_valid():
@@ -80,13 +73,14 @@ class BaseUsage(object):
                 messages.error(self.request,
                                _("Invalid date format: "
                                  "Using today as default."))
-            self.start = self.get_start(*args_start)
-            self.end = self.get_end(*args_end)
+        self.start = self.get_start(*args_start)
+        self.end = self.get_end(*args_end)
         return self.start, self.end
 
     def init_form(self):
-        self.start = self.first_day
-        self.end = self.today.date()
+        today = datetime.date.today()
+        self.start = datetime.date(day=1, month=today.month, year=today.year)
+        self.end = today
 
         return self.start, self.end
 
@@ -108,6 +102,100 @@ class BaseUsage(object):
             req.session['usage_start'] = start
             req.session['usage_end'] = end
         return self.form
+
+    def _get_neutron_usage(self, limits, resource_name):
+        resource_map = {
+            'floatingip': {
+                'api': api.network.tenant_floating_ip_list,
+                'limit_name': 'totalFloatingIpsUsed',
+                'message': _('Unable to retrieve floating IP addresses.')
+            },
+            'security_group': {
+                'api': api.network.security_group_list,
+                'limit_name': 'totalSecurityGroupsUsed',
+                'message': _('Unable to retrieve security groups.')
+            }
+        }
+
+        resource = resource_map[resource_name]
+        try:
+            method = resource['api']
+            current_used = len(method(self.request))
+        except Exception:
+            current_used = 0
+            msg = resource['message']
+            exceptions.handle(self.request, msg)
+
+        limits[resource['limit_name']] = current_used
+
+    def _set_neutron_limit(self, limits, neutron_quotas, resource_name):
+        limit_name_map = {
+            'floatingip': 'maxTotalFloatingIps',
+            'security_group': 'maxSecurityGroups',
+        }
+        if neutron_quotas is None:
+            resource_max = float("inf")
+        else:
+            resource_max = getattr(neutron_quotas.get(resource_name),
+                                   'limit', float("inf"))
+            if resource_max == -1:
+                resource_max = float("inf")
+
+        limits[limit_name_map[resource_name]] = resource_max
+
+    def get_neutron_limits(self):
+        if not api.base.is_service_enabled(self.request, 'network'):
+            return
+        try:
+            neutron_quotas_supported = (
+                api.neutron.is_quotas_extension_supported(self.request))
+            neutron_sg_used = (
+                api.neutron.is_extension_supported(self.request,
+                                                   'security-group'))
+            if api.network.floating_ip_supported(self.request):
+                self._get_neutron_usage(self.limits, 'floatingip')
+            if neutron_sg_used:
+                self._get_neutron_usage(self.limits, 'security_group')
+            # Quotas are an optional extension in Neutron. If it isn't
+            # enabled, assume the floating IP limit is infinite.
+            if neutron_quotas_supported:
+                neutron_quotas = api.neutron.tenant_quota_get(self.request,
+                                                              self.project_id)
+            else:
+                neutron_quotas = None
+        except Exception:
+            # Assume neutron security group and quotas are enabled
+            # because they are enabled in most Neutron plugins.
+            neutron_sg_used = True
+            neutron_quotas = None
+            msg = _('Unable to retrieve network quota information.')
+            exceptions.handle(self.request, msg)
+
+        self._set_neutron_limit(self.limits, neutron_quotas, 'floatingip')
+        if neutron_sg_used:
+            self._set_neutron_limit(self.limits, neutron_quotas,
+                                    'security_group')
+
+    def get_cinder_limits(self):
+        """Get volume limits if cinder is enabled."""
+        if not api.base.is_service_enabled(self.request, 'volume'):
+            return
+        try:
+            self.limits.update(api.cinder.tenant_absolute_limits(self.request))
+        except Exception:
+            msg = _("Unable to retrieve volume limit information.")
+            exceptions.handle(self.request, msg)
+
+        return
+
+    def get_limits(self):
+        try:
+            self.limits = api.nova.tenant_absolute_limits(self.request)
+        except Exception:
+            exceptions.handle(self.request,
+                              _("Unable to retrieve limit information."))
+        self.get_neutron_limits()
+        self.get_cinder_limits()
 
     def get_usage_list(self, start, end):
         return []
@@ -141,6 +229,13 @@ class BaseUsage(object):
                 self.summary.setdefault(key, 0)
                 self.summary[key] += value
 
+    def get_quotas(self):
+        try:
+            self.quotas = quotas.tenant_quota_usages(self.request)
+        except Exception:
+            exceptions.handle(self.request,
+                              _("Unable to retrieve quota information."))
+
     def csv_link(self):
         form = self.get_form()
         data = {}
@@ -153,7 +248,7 @@ class BaseUsage(object):
 
 
 class GlobalUsage(BaseUsage):
-    show_deleted = True
+    show_terminated = True
 
     def get_usage_list(self, start, end):
         return api.nova.usage_list(self.request, start, end)
@@ -163,16 +258,11 @@ class ProjectUsage(BaseUsage):
     attrs = ('memory_mb', 'vcpus', 'uptime',
              'hours', 'local_gb')
 
-    def __init__(self, request, project_id=None):
-        super(ProjectUsage, self).__init__(request, project_id)
-        self.limits = {}
-        self.quotas = {}
-
     def get_usage_list(self, start, end):
-        show_deleted = self.request.GET.get('show_deleted',
-                                            self.show_deleted)
+        show_terminated = self.request.GET.get('show_terminated',
+                                               self.show_terminated)
         instances = []
-        deleted_instances = []
+        terminated_instances = []
         usage = api.nova.usage_get(self.request, self.project_id, start, end)
         # Attribute may not exist if there are no instances
         if hasattr(usage, 'server_usages'):
@@ -183,104 +273,9 @@ class ProjectUsage(BaseUsage):
                 server_uptime = server_usage['uptime']
                 total_uptime = now - datetime.timedelta(seconds=server_uptime)
                 server_usage['uptime_at'] = total_uptime
-                if server_usage['ended_at'] and not show_deleted:
-                    deleted_instances.append(server_usage)
+                if server_usage['ended_at'] and not show_terminated:
+                    terminated_instances.append(server_usage)
                 else:
                     instances.append(server_usage)
         usage.server_usages = instances
         return (usage,)
-
-    def get_limits(self):
-        try:
-            self.limits = api.nova.tenant_absolute_limits(self.request,
-                                                          reserved=True)
-        except Exception:
-            exceptions.handle(self.request,
-                              _("Unable to retrieve limit information."))
-        self._get_neutron_limits()
-        self._get_cinder_limits()
-
-    def _get_neutron_usage(self, limits, resource_name):
-        resource_map = {
-            'floatingip': {
-                'api': api.neutron.tenant_floating_ip_list,
-                'limit_name': 'totalFloatingIpsUsed',
-                'message': _('Unable to retrieve floating IP addresses.')
-            },
-            'security_group': {
-                'api': api.neutron.security_group_list,
-                'limit_name': 'totalSecurityGroupsUsed',
-                'message': _('Unable to retrieve security groups.')
-            }
-        }
-
-        resource = resource_map[resource_name]
-        try:
-            method = resource['api']
-            current_used = len(method(self.request))
-        except Exception:
-            current_used = 0
-            msg = resource['message']
-            exceptions.handle(self.request, msg)
-
-        limits[resource['limit_name']] = current_used
-
-    def _set_neutron_limit(self, limits, neutron_quotas, resource_name):
-        limit_name_map = {
-            'floatingip': 'maxTotalFloatingIps',
-            'security_group': 'maxSecurityGroups',
-        }
-        if neutron_quotas is None:
-            resource_max = float("inf")
-        else:
-            resource_max = getattr(neutron_quotas.get(resource_name),
-                                   'limit', float("inf"))
-            if resource_max == -1:
-                resource_max = float("inf")
-
-        limits[limit_name_map[resource_name]] = resource_max
-
-    def _get_neutron_limits(self):
-        if not api.base.is_service_enabled(self.request, 'network'):
-            return
-        try:
-            neutron_quotas_supported = (
-                api.neutron.is_quotas_extension_supported(self.request))
-            neutron_sg_used = (
-                api.neutron.is_extension_supported(self.request,
-                                                   'security-group'))
-            if api.neutron.floating_ip_supported(self.request):
-                self._get_neutron_usage(self.limits, 'floatingip')
-            if neutron_sg_used:
-                self._get_neutron_usage(self.limits, 'security_group')
-            # Quotas are an optional extension in Neutron. If it isn't
-            # enabled, assume the floating IP limit is infinite.
-            if neutron_quotas_supported:
-                neutron_quotas = api.neutron.tenant_quota_get(self.request,
-                                                              self.project_id)
-            else:
-                neutron_quotas = None
-        except Exception:
-            # Assume neutron security group and quotas are enabled
-            # because they are enabled in most Neutron plugins.
-            neutron_sg_used = True
-            neutron_quotas = None
-            msg = _('Unable to retrieve network quota information.')
-            exceptions.handle(self.request, msg)
-
-        self._set_neutron_limit(self.limits, neutron_quotas, 'floatingip')
-        if neutron_sg_used:
-            self._set_neutron_limit(self.limits, neutron_quotas,
-                                    'security_group')
-
-    def _get_cinder_limits(self):
-        """Get volume limits if cinder is enabled."""
-        if not api.cinder.is_volume_service_enabled(self.request):
-            return
-        try:
-            self.limits.update(api.cinder.tenant_absolute_limits(self.request))
-        except Exception:
-            msg = _("Unable to retrieve volume limit information.")
-            exceptions.handle(self.request, msg)
-
-        return

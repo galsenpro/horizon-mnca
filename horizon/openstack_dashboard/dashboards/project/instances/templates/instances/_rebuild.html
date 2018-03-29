@@ -1,5 +1,6 @@
 {% extends "horizon/common/_modal_form.html" %}
 {% load i18n %}
+{% load url from future %}
 
 {% block form_id %}rebuild_instance_form{% endblock %}
 {% block form_action %}{% url "horizon:project:instances:rebuild" instance_id %}{% endblock %}
@@ -21,3 +22,9 @@
   {% endif %}
 </div>
 {% endblock %}
+
+{% block modal-footer %}
+  <input class="btn btn-primary pull-right" type="submit" value="{% trans "Rebuild Instance" %}" />
+  <a href="{% url "horizon:project:instances:index" %}" class="btn btn-default secondary cancel close">{% trans "Cancel" %}</a>
+{% endblock %}
+

@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% block title %}{% trans "Home" %}{% endblock %}
+
+{% block page_header %}
+  {% include "horizon/common/_domain_page_header.html" with title="Home" %}
+{% endblock page_header %}
+
+{% block main %}
+  <div id="home">
+	{{ applications_table.render}}
+	
+	{{ organizations_table.render }}          
+  </div>
+  <script type="text/javascript">
+
+	$( document ).ready(function() {
+		if ({% if request.user.starters_tour_ended %}false{% else %}true{% endif %}) {
+			
+			// CSRF functions for AJAX POST requests
+			function getCookie(name) {
+				var cookieValue = null;
+				if (document.cookie && document.cookie != '') {
+					var cookies = document.cookie.split(';');
+					for (var i = 0; i < cookies.length; i++) {
+						var cookie = jQuery.trim(cookies[i]);
+						// Does this cookie string begin with the name we want?
+						if (cookie.substring(0, name.length + 1) == (name + '=')) {
+							cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+							break;
+						}
+					}
+				}
+				return cookieValue;
+			};
+
+			function csrfSafeMethod(method) {
+				// these HTTP methods do not require CSRF protection
+				return (/^(GET|HEAD|OPTIONS|TRACE)$/.test(method));
+			}
+
+			var csrftoken = getCookie('csrftoken');
+
+			// AJAX setup functions
+			var beforeSend = function(xhr, settings) {
+				if (!csrfSafeMethod(settings.type) && !this.crossDomain) {
+					xhr.setRequestHeader("X-CSRFToken", csrftoken);
+				}
+			};
+			var error = function(jqXHR, status, errorThrown) {
+				if (jqXHR.status === 401){
+					var redir_url = jqXHR.getResponseHeader("X-Horizon-Location");
+					if (redir_url){
+						location.href = redir_url;
+					} else {
+						location.reload(true);
+					}
+				}
+				else {
+					if (!horizon.ajax.get_messages(jqXHR)) {
+						// Generic error handler. Really generic.
+						horizon.alert("danger", gettext("An error occurred. Please try again later."));
+					}
+				}
+			};
+
+			tours.initTour._options.onEnd = function() {
+				$.ajax({
+					type: "POST",
+					url: "{% url 'horizon:idm:users:tour_ended' request.user.id %}",
+					data: "Tour ended",
+					dataType: 'html',
+					beforeSend: beforeSend,
+					error: error
+				});
+			};
+
+			tours.initTour.init();
+			tours.initTour.start();
+		}
+
+		/* Add link to Help&About in last tour */
+		tours.orgsTour._options.steps[9].onShown = function(tour) {
+			$('#end-tours').attr('href', "{% url 'horizon:help_about:help_about:index' %}");
+		};
+
+	});
+  </script>
+{% endblock %}
+
+
+
+

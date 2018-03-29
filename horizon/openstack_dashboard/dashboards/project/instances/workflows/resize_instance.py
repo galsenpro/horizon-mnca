@@ -16,7 +16,7 @@
 import json
 
 from django.utils.translation import ugettext_lazy as _
-from django.views.decorators.debug import sensitive_variables
+from django.views.decorators.debug import sensitive_variables  # noqa
 
 from horizon import exceptions
 from horizon import forms
@@ -35,44 +35,42 @@ class SetFlavorChoiceAction(workflows.Action):
         widget=forms.TextInput(attrs={'readonly': 'readonly'}),
         required=False,
     )
-    flavor = forms.ThemableChoiceField(
-        label=_("New Flavor"),
-        help_text=_("Choose the flavor to launch."))
+    flavor = forms.ChoiceField(label=_("New Flavor"),
+                               help_text=_("Choose the flavor to launch."))
 
-    class Meta(object):
+    class Meta:
         name = _("Flavor Choice")
         slug = 'flavor_choice'
         help_text_template = ("project/instances/"
                               "_flavors_and_quotas.html")
 
+    def clean(self):
+        cleaned_data = super(SetFlavorChoiceAction, self).clean()
+        flavor = cleaned_data.get('flavor', None)
+
+        if flavor is None or flavor == cleaned_data['old_flavor_id']:
+            raise forms.ValidationError(_('Please choose a new flavor that '
+                                          'is not the same as the old one.'))
+        return cleaned_data
+
     def populate_flavor_choices(self, request, context):
-        old_flavor_id = context.get('old_flavor_id')
         flavors = context.get('flavors').values()
-
-        # Remove current flavor from the list of flavor choices
-        flavors = [flavor for flavor in flavors if flavor.id != old_flavor_id]
-
+        if len(flavors) > 1:
+            flavors = instance_utils.sort_flavor_list(request, flavors)
         if flavors:
-            if len(flavors) > 1:
-                flavors = instance_utils.sort_flavor_list(request, flavors)
-            else:
-                flavor = flavors[0]
-                flavors = [(flavor.id, flavor.name)]
             flavors.insert(0, ("", _("Select a New Flavor")))
         else:
             flavors.insert(0, ("", _("No flavors available")))
         return flavors
 
-    def get_help_text(self, extra_context=None):
-        extra = {} if extra_context is None else dict(extra_context)
+    def get_help_text(self):
+        extra = {}
         try:
-            extra['usages'] = api.nova.tenant_absolute_limits(self.request,
-                                                              reserved=True)
+            extra['usages'] = api.nova.tenant_absolute_limits(self.request)
             extra['usages_json'] = json.dumps(extra['usages'])
             flavors = json.dumps([f._info for f in
                                   instance_utils.flavor_list(self.request)])
             extra['flavors'] = flavors
-            extra['resize_instance'] = True
         except Exception:
             exceptions.handle(self.request,
                               _("Unable to retrieve quota information."))
@@ -89,8 +87,7 @@ class ResizeInstance(workflows.Workflow):
     slug = "resize_instance"
     name = _("Resize Instance")
     finalize_button_name = _("Resize")
-    success_message = _('Request for resizing of instance "%s" '
-                        'has been submitted.')
+    success_message = _('Scheduled resize of instance "%s".')
     failure_message = _('Unable to resize instance "%s".')
     success_url = "horizon:project:instances:index"
     default_steps = (SetFlavorChoice, create_instance.SetAdvanced)

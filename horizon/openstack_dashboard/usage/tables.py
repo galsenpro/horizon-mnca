@@ -11,7 +11,8 @@
 # under the License.
 
 from django.core import urlresolvers
-from django.template.defaultfilters import floatformat
+from django.template.defaultfilters import floatformat  # noqa
+from django.template.defaultfilters import timesince  # noqa
 from django.utils.translation import ugettext_lazy as _
 
 from horizon import tables
@@ -31,41 +32,29 @@ class CSVSummary(tables.LinkAction):
 class BaseUsageTable(tables.DataTable):
     vcpus = tables.Column('vcpus', verbose_name=_("VCPUs"))
     disk = tables.Column('local_gb', verbose_name=_("Disk"),
-                         filters=(sizeformat.diskgbformat,),
-                         attrs={"data-type": "size"})
+                         filters=(sizeformat.diskgbformat,))
     memory = tables.Column('memory_mb',
                            verbose_name=_("RAM"),
-                           filters=(sizeformat.mb_float_format,),
+                           filters=(sizeformat.mbformat,),
                            attrs={"data-type": "size"})
+    hours = tables.Column('vcpu_hours', verbose_name=_("VCPU Hours"),
+                          filters=(lambda v: floatformat(v, 2),))
 
 
 class GlobalUsageTable(BaseUsageTable):
     project = tables.Column('project_name', verbose_name=_("Project Name"))
-    vcpu_hours = tables.Column('vcpu_hours', verbose_name=_("VCPU Hours"),
-                               help_text=_("Total VCPU usage (Number of "
-                                           "VCPU in instance * Hours Used) "
-                                           "for the project"),
-                               filters=(lambda v: floatformat(v, 2),))
     disk_hours = tables.Column('disk_gb_hours',
                                verbose_name=_("Disk GB Hours"),
-                               help_text=_("Total disk usage (GB * "
-                                           "Hours Used) for the project"),
                                filters=(lambda v: floatformat(v, 2),))
-    memory_hours = tables.Column('memory_mb_hours',
-                                 verbose_name=_("Memory MB Hours"),
-                                 help_text=_("Total memory usage (MB * "
-                                             "Hours Used) for the project"),
-                                 filters=(lambda v: floatformat(v, 2),))
 
     def get_object_id(self, datum):
         return datum.tenant_id
 
-    class Meta(object):
+    class Meta:
         name = "global_usage"
-        hidden_title = False
         verbose_name = _("Usage")
         columns = ("project", "vcpus", "disk", "memory",
-                   "vcpu_hours", "disk_hours", "memory_hours")
+                   "hours", "disk_hours")
         table_actions = (CSVSummary,)
         multi_select = False
 
@@ -90,9 +79,8 @@ class ProjectUsageTable(BaseUsageTable):
     def get_object_id(self, datum):
         return datum.get('instance_id', id(datum))
 
-    class Meta(object):
+    class Meta:
         name = "project_usage"
-        hidden_title = False
         verbose_name = _("Usage")
         columns = ("instance", "vcpus", "disk", "memory", "uptime")
         table_actions = (CSVSummary,)

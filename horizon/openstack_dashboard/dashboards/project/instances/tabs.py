@@ -13,12 +13,10 @@
 #    under the License.
 
 from django.conf import settings
-from django.core.urlresolvers import reverse
 from django.utils.translation import ugettext_lazy as _
 
 from horizon import exceptions
 from horizon import tabs
-from horizon.utils import functions as utils
 
 from openstack_dashboard.dashboards.project.instances \
     import audit_tables as a_tables
@@ -34,8 +32,7 @@ class OverviewTab(tabs.Tab):
                      "_detail_overview.html")
 
     def get_context_data(self, request):
-        return {"instance": self.tab_group.kwargs['instance'],
-                "is_superuser": request.user.is_superuser}
+        return {"instance": self.tab_group.kwargs['instance']}
 
 
 class LogTab(tabs.Tab):
@@ -46,17 +43,15 @@ class LogTab(tabs.Tab):
 
     def get_context_data(self, request):
         instance = self.tab_group.kwargs['instance']
-        log_length = utils.get_log_length(request)
         try:
             data = api.nova.server_console_output(request,
                                                   instance.id,
-                                                  tail_length=log_length)
+                                                  tail_length=35)
         except Exception:
             data = _('Unable to get log for instance "%s".') % instance.id
             exceptions.handle(request, ignore=True)
         return {"instance": instance,
-                "console_log": data,
-                "log_length": log_length}
+                "console_log": data}
 
 
 class ConsoleTab(tabs.Tab):
@@ -70,18 +65,11 @@ class ConsoleTab(tabs.Tab):
         console_type = getattr(settings, 'CONSOLE_TYPE', 'AUTO')
         console_url = None
         try:
-            console_type, console_url = console.get_console(
-                request, console_type, instance)
-            # For serial console, the url is different from VNC, etc.
-            # because it does not include params for title and token
-            if console_type == "SERIAL":
-                console_url = reverse('horizon:project:instances:serial',
-                                      args=[instance.id])
+            console_url = console.get_console(request, console_type, instance)
         except exceptions.NotAvailable:
             exceptions.handle(request, ignore=True, force_log=True)
 
-        return {'console_url': console_url, 'instance_id': instance.id,
-                'console_type': console_type}
+        return {'console_url': console_url, 'instance_id': instance.id}
 
     def allowed(self, request):
         # The ConsoleTab is available if settings.CONSOLE_TYPE is not set at
@@ -108,7 +96,7 @@ class AuditTab(tabs.TableTab):
         return sorted(actions, reverse=True, key=lambda y: y.start_time)
 
 
-class InstanceDetailTabs(tabs.DetailTabsGroup):
+class InstanceDetailTabs(tabs.TabGroup):
     slug = "instance_details"
     tabs = (OverviewTab, LogTab, ConsoleTab, AuditTab)
     sticky = True

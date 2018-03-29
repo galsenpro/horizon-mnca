@@ -13,9 +13,8 @@
 #    under the License.
 
 from django.utils.translation import ugettext_lazy as _
-from django.views import generic
 
-from horizon.tables import MultiTableView
+from horizon.tables import MultiTableView  # noqa
 from horizon.utils import memoized
 
 
@@ -56,30 +55,4 @@ class ResourceBrowserView(MultiTableView):
         context = super(ResourceBrowserView, self).get_context_data(**kwargs)
         browser = self.get_browser()
         context["%s_browser" % browser.name] = browser
-        return context
-
-
-class AngularIndexView(generic.TemplateView):
-    '''View for Angularized panel
-
-    title: to display title for browser window or tab.
-    page_title: to display current position in breadcrumb.
-
-    Sample usage is as follows.
-    from horizon.browsers import views
-    views.AngularIndexView.as_view(title="Images")
-    views.AngularIndexView.as_view(title="Browser Title",
-                                   page_title="Page Title")
-    '''
-    template_name = 'angular.html'
-    title = _("Horizon")
-    page_title = None
-
-    def get_context_data(self, **kwargs):
-        context = super(AngularIndexView, self).get_context_data(**kwargs)
-        context["title"] = self.title
-        if self.page_title is None:
-            context["page_title"] = self.title
-        else:
-            context["page_title"] = self.page_title
         return context

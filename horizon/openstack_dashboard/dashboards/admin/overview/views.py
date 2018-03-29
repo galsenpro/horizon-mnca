@@ -17,7 +17,7 @@
 #    under the License.
 
 from django.conf import settings
-from django.template.defaultfilters import floatformat
+from django.template.defaultfilters import floatformat  # noqa
 from django.utils import translation
 from django.utils.translation import ugettext_lazy as _
 
@@ -64,7 +64,7 @@ class GlobalOverview(usage.UsageView):
             exceptions.handle(self.request,
                               _('Unable to retrieve project list.'))
         for instance in data:
-            project = [t for t in projects if t.id == instance.tenant_id]
+            project = filter(lambda t: t.id == instance.tenant_id, projects)
             # If we could not get the project name, show the tenant_id with
             # a 'Deleted' identifier instead.
             if project:

@@ -12,102 +12,88 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import json
+
 from django.conf import settings
 from django.core.urlresolvers import reverse
+from django import http
 from django.test.utils import override_settings
 
-import mock
+from mox import IsA  # noqa
 
 from openstack_dashboard import api
 from openstack_dashboard.test import helpers as test
 
 from openstack_dashboard.dashboards.admin.images import tables
 
-INDEX_TEMPLATE = 'horizon/common/_data_table_view.html'
+IMAGE_METADATA_URL = reverse('horizon:admin:images:update_metadata',
+                             kwargs={
+                                 "id": "007e7d55-fe1e-4c5c-bf08-44b4a4964822"})
 
 
 class ImageCreateViewTest(test.BaseAdminViewTests):
-    @mock.patch.object(api.glance, 'image_list_detailed')
-    def test_admin_image_create_view_uses_admin_template(self,
-                                                         mock_image_list):
-        filters1 = {'disk_format': 'aki'}
-        filters2 = {'disk_format': 'ari'}
-
-        mock_image_list.return_value = [self.images.list(), False, False]
-
+    def test_admin_image_create_view_uses_admin_template(self):
         res = self.client.get(
             reverse('horizon:admin:images:create'))
-
-        calls = [mock.call(test.IsHttpRequest(), filters=filters1),
-                 mock.call(test.IsHttpRequest(), filters=filters2)]
-        mock_image_list.assert_has_calls(calls)
-
         self.assertTemplateUsed(res, 'admin/images/create.html')
 
 
 class ImagesViewTest(test.BaseAdminViewTests):
-    @mock.patch.object(api.glance, 'image_list_detailed')
-    @mock.patch.object(api.keystone, 'tenant_list')
-    def test_images_list(self, mock_tenant_list, mock_image_list):
+    @test.create_stubs({api.glance: ('image_list_detailed',)})
+    def test_images_list(self):
         filters = {'is_public': None}
-        mock_image_list.return_value = [self.images.list(), False, False]
-        mock_tenant_list.return_value = [self.tenants.list(), False]
+        api.glance.image_list_detailed(IsA(http.HttpRequest),
+                                       marker=None,
+                                       paginate=True,
+                                       filters=filters,
+                                       sort_dir='desc') \
+            .AndReturn([self.images.list(),
+                        False, False])
+        self.mox.ReplayAll()
 
-        # Test tenant list
         res = self.client.get(
             reverse('horizon:admin:images:index'))
-
-        mock_tenant_list.assert_called_once_with(test.IsHttpRequest())
-        mock_image_list.assert_called_once_with(test.IsHttpRequest(),
-                                                marker=None,
-                                                paginate=True,
-                                                filters=filters,
-                                                sort_dir='asc',
-                                                sort_key='name',
-                                                reversed_order=False)
-        self.assertContains(res, 'test_tenant', 9, 200)
-        self.assertTemplateUsed(res, INDEX_TEMPLATE)
+        self.assertTemplateUsed(res, 'admin/images/index.html')
         self.assertEqual(len(res.context['images_table'].data),
                          len(self.images.list()))
 
-    @test.update_settings(FILTER_DATA_FIRST={'admin.images': True})
-    def test_images_list_with_admin_filter_first(self):
-        res = self.client.get(reverse('horizon:admin:images:index'))
-        self.assertTemplateUsed(res, INDEX_TEMPLATE)
-        images = res.context['table'].data
-        self.assertItemsEqual(images, [])
-
     @override_settings(API_RESULT_PAGE_SIZE=2)
-    @mock.patch.object(api.glance, 'image_list_detailed')
-    @mock.patch.object(api.keystone, 'tenant_list')
-    def test_images_list_get_pagination(self, mock_tenant_list,
-                                        mock_image_list):
+    @test.create_stubs({api.glance: ('image_list_detailed',)})
+    def test_images_list_get_pagination(self):
         images = self.images.list()[:5]
         filters = {'is_public': None}
-        kwargs = {'paginate': True, 'filters': filters,
-                  'sort_dir': 'asc', 'sort_key': 'name',
-                  'reversed_order': False}
-        mock_image_list.side_effect = [[images, True, True],
-                                       [images[:2], True, True],
-                                       [images[2:4], True, True],
-                                       [images[4:], True, True]]
+        api.glance.image_list_detailed(IsA(http.HttpRequest),
+                                       marker=None,
+                                       paginate=True,
+                                       filters=filters,
+                                       sort_dir='desc') \
+            .AndReturn([images, True, True])
+        api.glance.image_list_detailed(IsA(http.HttpRequest),
+                                       marker=None,
+                                       paginate=True,
+                                       filters=filters,
+                                       sort_dir='desc') \
+            .AndReturn([images[:2], True, True])
+        api.glance.image_list_detailed(IsA(http.HttpRequest),
+                                       marker=images[2].id,
+                                       paginate=True,
+                                       filters=filters,
+                                       sort_dir='desc') \
+            .AndReturn([images[2:4], True, True])
+        api.glance.image_list_detailed(IsA(http.HttpRequest),
+                                       marker=images[4].id,
+                                       paginate=True,
+                                       filters=filters,
+                                       sort_dir='desc') \
+            .AndReturn([images[4:], True, True])
+        self.mox.ReplayAll()
 
-        mock_tenant_list.return_value = [self.tenants.list(), False]
-        # Test tenant list
         url = reverse('horizon:admin:images:index')
         res = self.client.get(url)
-
-        image_calls = [mock.call(test.IsHttpRequest(), marker=None, **kwargs),
-                       mock.call(test.IsHttpRequest(), marker=None, **kwargs),
-                       mock.call(test.IsHttpRequest(),
-                                 marker=images[2].id, **kwargs),
-                       mock.call(test.IsHttpRequest(),
-                                 marker=images[4].id, **kwargs)]
         # get all
         self.assertEqual(len(res.context['images_table'].data),
                          len(images))
-        self.assertTemplateUsed(res, INDEX_TEMPLATE)
-        self.assertContains(res, 'test_tenant', 7, 200)
+        self.assertTemplateUsed(res, 'admin/images/index.html')
 
         res = self.client.get(url)
         # get first page with 2 items
@@ -121,60 +107,115 @@ class ImagesViewTest(test.BaseAdminViewTests):
         # get second page (items 2-4)
         self.assertEqual(len(res.context['images_table'].data),
                          settings.API_RESULT_PAGE_SIZE)
-        self.assertContains(res, 'test_tenant', 4, 200)
 
         params = "=".join([tables.AdminImagesTable._meta.pagination_param,
                            images[4].id])
         url = "?".join([reverse('horizon:admin:images:index'), params])
         res = self.client.get(url)
-
         # get third page (item 5)
         self.assertEqual(len(res.context['images_table'].data),
                          1)
-        self.assertContains(res, 'test_tenant', 3, 200)
 
-        mock_image_list.assert_has_calls(image_calls)
-        mock_tenant_list.assert_called_with(test.IsHttpRequest())
+    @test.create_stubs({api.glance: ('image_get',
+                                     'metadefs_namespace_list',
+                                     'metadefs_namespace_get')})
+    def test_images_metadata_get(self):
+        image = self.images.first()
+
+        api.glance.image_get(
+            IsA(http.HttpRequest),
+            image.id
+        ).AndReturn(image)
+
+        namespaces = self.metadata_defs.list()
+
+        api.glance.metadefs_namespace_list(IsA(http.HttpRequest), filters={
+            'resource_types': ['OS::Glance::Image']}).AndReturn(
+                (namespaces, False, False))
+
+        for namespace in namespaces:
+            api.glance.metadefs_namespace_get(
+                IsA(http.HttpRequest),
+                namespace.namespace,
+                'OS::Glance::Image'
+            ).AndReturn(namespace)
+
+        self.mox.ReplayAll()
+        res = self.client.get(IMAGE_METADATA_URL)
+
+        self.assertTemplateUsed(res, 'admin/images/update_metadata.html')
+        self.assertContains(res, 'namespace_1')
+        self.assertContains(res, 'namespace_2')
+        self.assertContains(res, 'namespace_3')
+        self.assertContains(res, 'namespace_4')
+
+    @test.create_stubs({api.glance: ('image_get', 'image_update_properties')})
+    def test_images_metadata_update(self):
+        image = self.images.first()
+
+        api.glance.image_get(
+            IsA(http.HttpRequest),
+            image.id
+        ).AndReturn(image)
+        api.glance.image_update_properties(
+            IsA(http.HttpRequest), image.id, ['image_type'],
+            hw_machine_type='mock_value').AndReturn(None)
+
+        self.mox.ReplayAll()
+
+        metadata = [{"value": "mock_value", "key": "hw_machine_type"}]
+        formData = {"metadata": json.dumps(metadata)}
+
+        res = self.client.post(IMAGE_METADATA_URL, formData)
+
+        self.assertNoFormErrors(res)
+        self.assertMessageCount(success=1)
+        self.assertRedirectsNoFollow(
+            res, reverse('horizon:admin:images:index')
+        )
 
     @override_settings(API_RESULT_PAGE_SIZE=2)
-    @mock.patch.object(api.glance, 'image_list_detailed')
-    @mock.patch.object(api.keystone, 'tenant_list')
-    def test_images_list_get_prev_pagination(self, mock_tenant_list,
-                                             mock_image_list):
+    @test.create_stubs({api.glance: ('image_list_detailed',)})
+    def test_images_list_get_prev_pagination(self):
         images = self.images.list()[:3]
         filters = {'is_public': None}
-        kwargs = {'paginate': True, 'filters': filters,
-                  'sort_dir': 'asc', 'sort_key': 'name'}
-
-        mock_image_list.side_effect = [[images, True, False],
-                                       [images[:2], True, True],
-                                       [images[2:], True, True],
-                                       [images[:2], True, True]]
-
-        mock_tenant_list.return_value = [self.tenants.list(), False]
-
-        image_calls = [mock.call(test.IsHttpRequest(), marker=None,
-                                 reversed_order=False, **kwargs),
-                       mock.call(test.IsHttpRequest(), marker=None,
-                                 reversed_order=False, **kwargs),
-                       mock.call(test.IsHttpRequest(), marker=images[2].id,
-                                 reversed_order=False, **kwargs),
-                       mock.call(test.IsHttpRequest(), marker=images[2].id,
-                                 reversed_order=True, **kwargs)]
+        api.glance.image_list_detailed(IsA(http.HttpRequest),
+                                       marker=None,
+                                       paginate=True,
+                                       filters=filters,
+                                       sort_dir='desc') \
+            .AndReturn([images, True, False])
+        api.glance.image_list_detailed(IsA(http.HttpRequest),
+                                       marker=None,
+                                       paginate=True,
+                                       filters=filters,
+                                       sort_dir='desc') \
+            .AndReturn([images[:2], True, True])
+        api.glance.image_list_detailed(IsA(http.HttpRequest),
+                                       marker=images[2].id,
+                                       paginate=True,
+                                       filters=filters,
+                                       sort_dir='desc') \
+            .AndReturn([images[2:], True, True])
+        api.glance.image_list_detailed(IsA(http.HttpRequest),
+                                       marker=images[2].id,
+                                       paginate=True,
+                                       filters=filters,
+                                       sort_dir='asc') \
+            .AndReturn([images[:2], True, True])
+        self.mox.ReplayAll()
 
         url = reverse('horizon:admin:images:index')
         res = self.client.get(url)
         # get all
         self.assertEqual(len(res.context['images_table'].data),
                          len(images))
-        self.assertTemplateUsed(res, INDEX_TEMPLATE)
-        self.assertContains(res, 'test_tenant', 5, 200)
+        self.assertTemplateUsed(res, 'admin/images/index.html')
 
         res = self.client.get(url)
         # get first page with 2 items
         self.assertEqual(len(res.context['images_table'].data),
                          settings.API_RESULT_PAGE_SIZE)
-        self.assertContains(res, 'test_tenant', 4, 200)
 
         params = "=".join([tables.AdminImagesTable._meta.pagination_param,
                            images[2].id])
@@ -182,7 +223,6 @@ class ImagesViewTest(test.BaseAdminViewTests):
         res = self.client.get(url)
         # get second page (item 3)
         self.assertEqual(len(res.context['images_table'].data), 1)
-        self.assertContains(res, 'test_tenant', 3, 200)
 
         params = "=".join([tables.AdminImagesTable._meta.prev_pagination_param,
                            images[2].id])
@@ -191,7 +231,3 @@ class ImagesViewTest(test.BaseAdminViewTests):
         # prev back to get first page with 2 items
         self.assertEqual(len(res.context['images_table'].data),
                          settings.API_RESULT_PAGE_SIZE)
-        self.assertContains(res, 'test_tenant', 4, 200)
-
-        mock_image_list.assert_has_calls(image_calls)
-        mock_tenant_list.assert_called_with(test.IsHttpRequest())

@@ -18,9 +18,9 @@ from openstack_dashboard.dashboards.project.instances import tables
 
 
 class InstancesTable(tables.InstancesTable):
-    class Meta(object):
+    class Meta:
         name = "instances"
         verbose_name = _("Instances")
         row_actions = (
-            tables.DeleteInstance,
+            tables.TerminateInstance,
         )

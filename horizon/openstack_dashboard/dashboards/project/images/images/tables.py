@@ -18,25 +18,25 @@ from django.conf import settings
 from django.core.urlresolvers import reverse
 from django.template import defaultfilters as filters
 from django.utils.http import urlencode
-from django.utils.translation import pgettext_lazy
 from django.utils.translation import ugettext_lazy as _
 from django.utils.translation import ungettext_lazy
 
 from horizon import tables
-from horizon.utils.memoized import memoized
+from horizon.utils.memoized import memoized  # noqa
 
 from openstack_dashboard import api
+from openstack_dashboard.api import base
 
 NOT_LAUNCHABLE_FORMATS = ['aki', 'ari']
 
 
 class LaunchImage(tables.LinkAction):
     name = "launch_image"
-    verbose_name = _("Launch Instance")
+    verbose_name = _("Launch")
     url = "horizon:project:instances:launch"
     classes = ("ajax-modal", "btn-launch")
     icon = "cloud-upload"
-    policy_rules = (("compute", "os_compute_api:servers:create"),)
+    policy_rules = (("compute", "compute:create"),)
 
     def get_link_url(self, datum):
         base_url = reverse(self.url)
@@ -51,41 +51,12 @@ class LaunchImage(tables.LinkAction):
         return "?".join([base_url, params])
 
     def allowed(self, request, image=None):
-        if not api.base.is_service_enabled(request, 'compute'):
-            return False
         if image and image.container_format not in NOT_LAUNCHABLE_FORMATS:
             return image.status in ("active",)
         return False
 
 
-class LaunchImageNG(LaunchImage):
-    name = "launch_image_ng"
-    verbose_name = _("Launch")
-    url = "horizon:project:images:index"
-    classes = ("btn-launch", )
-    ajax = False
-
-    def __init__(self, attrs=None, **kwargs):
-        kwargs['preempt'] = True
-        super(LaunchImage, self).__init__(attrs, **kwargs)
-
-    def get_link_url(self, datum):
-        imageId = self.table.get_object_id(datum)
-        url = reverse(self.url)
-        ngclick = "modal.openLaunchInstanceWizard(" \
-            "{successUrl: '%s', imageId: '%s'})" % (url, imageId)
-        self.attrs.update({
-            "ng-controller": "LaunchInstanceModalController as modal",
-            "ng-click": ngclick
-        })
-        return "javascript:void(0);"
-
-
 class DeleteImage(tables.DeleteAction):
-    # NOTE: The bp/add-batchactions-help-text
-    # will add appropriate help text to some batch/delete actions.
-    help_text = _("Deleted images are not recoverable.")
-
     @staticmethod
     def action_present(count):
         return ungettext_lazy(
@@ -128,7 +99,7 @@ class CreateImage(tables.LinkAction):
 
 class EditImage(tables.LinkAction):
     name = "edit"
-    verbose_name = _("Edit Image")
+    verbose_name = _("Edit")
     url = "horizon:project:images:images:update"
     classes = ("ajax-modal",)
     icon = "pencil"
@@ -146,7 +117,7 @@ class EditImage(tables.LinkAction):
 class CreateVolumeFromImage(tables.LinkAction):
     name = "create_volume_from_image"
     verbose_name = _("Create Volume")
-    url = "horizon:project:volumes:create"
+    url = "horizon:project:volumes:volumes:create"
     classes = ("ajax-modal",)
     icon = "camera"
     policy_rules = (("volume", "volume:create"),)
@@ -158,33 +129,9 @@ class CreateVolumeFromImage(tables.LinkAction):
 
     def allowed(self, request, image=None):
         if (image and image.container_format not in NOT_LAUNCHABLE_FORMATS
-                and api.cinder.is_volume_service_enabled(request)):
+                and base.is_service_enabled(request, 'volume')):
             return image.status == "active"
         return False
-
-
-class UpdateMetadata(tables.LinkAction):
-    name = "update_metadata"
-    verbose_name = _("Update Metadata")
-    ajax = False
-    icon = "pencil"
-    attrs = {"ng-controller": "MetadataModalHelperController as modal"}
-
-    def __init__(self, attrs=None, **kwargs):
-        kwargs['preempt'] = True
-        super(UpdateMetadata, self).__init__(attrs, **kwargs)
-
-    def get_link_url(self, datum):
-        image_id = self.table.get_object_id(datum)
-        self.attrs['ng-click'] = (
-            "modal.openMetadataModal('image', '%s', true)" % image_id)
-        return "javascript:void(0);"
-
-    def allowed(self, request, image=None):
-        return (api.glance.VERSIONS.active >= 2 and
-                image and
-                image.status == "active" and
-                image.owner == request.user.project_id)
 
 
 def filter_tenants():
@@ -193,7 +140,7 @@ def filter_tenants():
 
 @memoized
 def filter_tenant_ids():
-    return [ft['tenant'] for ft in filter_tenants()]
+    return map(lambda ft: ft['tenant'], filter_tenants())
 
 
 class OwnerFilter(tables.FixedFilterAction):
@@ -206,14 +153,8 @@ class OwnerFilter(tables.FixedFilterAction):
             new_dict = button_dict.copy()
             new_dict['value'] = new_dict['tenant']
             buttons.append(new_dict)
-        # FIXME(bpokorny): Remove this check once admins can list images with
-        # GlanceV2 without getting all images in the whole cloud.
-        if api.glance.VERSIONS.active >= 2:
-            buttons.append(make_dict(_('Non-Public from Other Projects'),
-                                     'other', 'fa-group'))
-        else:
-            buttons.append(make_dict(_('Shared with Project'), 'shared',
-                                     'fa-share-square-o'))
+        buttons.append(make_dict(_('Shared with Me'), 'shared',
+                                 'fa-share-square-o'))
         buttons.append(make_dict(_('Public'), 'public', 'fa-group'))
         return buttons
 
@@ -237,7 +178,6 @@ def get_image_categories(im, user_tenant_id):
         categories.append(im.owner)
     elif not im.is_public:
         categories.append('shared')
-        categories.append('other')
     return categories
 
 
@@ -253,16 +193,8 @@ def get_format(image):
     format = getattr(image, "disk_format", "")
     # The "container_format" attribute can actually be set to None,
     # which will raise an error if you call upper() on it.
-    if not format:
-        return format
-    if format == "raw":
-        if getattr(image, "container_format") == 'docker':
-            return pgettext_lazy("Image format for display in table",
-                                 u"Docker")
-        # Most image formats are untranslated acronyms, but raw is a word
-        # and should be translated
-        return pgettext_lazy("Image format for display in table", u"Raw")
-    return format.upper()
+    if format is not None:
+        return format.upper()
 
 
 class UpdateRow(tables.Row):
@@ -290,34 +222,18 @@ class ImagesTable(tables.DataTable):
         ("pending_delete", None),
         ("killed", False),
         ("deleted", False),
-        ("deactivated", False),
     )
-    STATUS_DISPLAY_CHOICES = (
-        ("active", pgettext_lazy("Current status of an Image", u"Active")),
-        ("saving", pgettext_lazy("Current status of an Image", u"Saving")),
-        ("queued", pgettext_lazy("Current status of an Image", u"Queued")),
-        ("pending_delete", pgettext_lazy("Current status of an Image",
-                                         u"Pending Delete")),
-        ("killed", pgettext_lazy("Current status of an Image", u"Killed")),
-        ("deleted", pgettext_lazy("Current status of an Image", u"Deleted")),
-        ("deactivated", pgettext_lazy("Current status of an Image",
-                                      u"Deactivated")),
-    )
-    TYPE_CHOICES = (
-        ("image", pgettext_lazy("Type of an image", u"Image")),
-        ("snapshot", pgettext_lazy("Type of an image", u"Snapshot")),
-    )
-    name = tables.WrappingColumn(get_image_name,
-                                 link="horizon:project:images:images:detail",
-                                 verbose_name=_("Image Name"),)
+    name = tables.Column(get_image_name,
+                         link=("horizon:project:images:images:detail"),
+                         verbose_name=_("Image Name"))
     image_type = tables.Column(get_image_type,
                                verbose_name=_("Type"),
-                               display_choices=TYPE_CHOICES)
+                               filters=(filters.title,))
     status = tables.Column("status",
+                           filters=(filters.title,),
                            verbose_name=_("Status"),
                            status=True,
-                           status_choices=STATUS_CHOICES,
-                           display_choices=STATUS_DISPLAY_CHOICES)
+                           status_choices=STATUS_CHOICES)
     public = tables.Column("is_public",
                            verbose_name=_("Public"),
                            empty_value=False,
@@ -332,17 +248,12 @@ class ImagesTable(tables.DataTable):
                          attrs=({"data-type": "size"}),
                          verbose_name=_("Size"))
 
-    class Meta(object):
+    class Meta:
         name = "images"
         row_class = UpdateRow
         status_columns = ["status"]
         verbose_name = _("Images")
         table_actions = (OwnerFilter, CreateImage, DeleteImage,)
-        launch_actions = ()
-        if getattr(settings, 'LAUNCH_INSTANCE_LEGACY_ENABLED', False):
-            launch_actions = (LaunchImage,) + launch_actions
-        if getattr(settings, 'LAUNCH_INSTANCE_NG_ENABLED', True):
-            launch_actions = (LaunchImageNG,) + launch_actions
-        row_actions = launch_actions + (CreateVolumeFromImage,
-                                        EditImage, UpdateMetadata,
-                                        DeleteImage,)
+        row_actions = (LaunchImage, CreateVolumeFromImage,
+                       EditImage, DeleteImage,)
+        pagination_param = "image_marker"

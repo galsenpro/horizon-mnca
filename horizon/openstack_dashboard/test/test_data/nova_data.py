@@ -13,23 +13,29 @@
 #    under the License.
 
 import json
+import uuid
 
-from novaclient.v2 import aggregates
-from novaclient.v2 import availability_zones
-from novaclient.v2 import certs
-from novaclient.v2 import flavor_access
-from novaclient.v2 import flavors
-from novaclient.v2 import hosts
-from novaclient.v2 import hypervisors
-from novaclient.v2 import keypairs
-from novaclient.v2 import quotas
-from novaclient.v2 import server_groups
-from novaclient.v2 import servers
-from novaclient.v2 import services
-from novaclient.v2 import usage
-from novaclient.v2 import volumes
+from novaclient.v1_1 import aggregates
+from novaclient.v1_1 import availability_zones
+from novaclient.v1_1 import certs
+from novaclient.v1_1 import flavor_access
+from novaclient.v1_1 import flavors
+from novaclient.v1_1 import floating_ips
+from novaclient.v1_1 import hosts
+from novaclient.v1_1 import hypervisors
+from novaclient.v1_1 import keypairs
+from novaclient.v1_1 import quotas
+from novaclient.v1_1 import security_group_rules as rules
+from novaclient.v1_1 import security_groups as sec_groups
+from novaclient.v1_1 import servers
+from novaclient.v1_1 import services
+from novaclient.v1_1 import usage
+from novaclient.v1_1 import volume_snapshots as vol_snaps
+from novaclient.v1_1 import volume_types
+from novaclient.v1_1 import volumes
 
 from openstack_dashboard.api import base
+from openstack_dashboard.api import nova
 from openstack_dashboard.usage import quotas as usage_quotas
 
 from openstack_dashboard.test.test_data import utils
@@ -119,8 +125,8 @@ USAGE_DATA = """
     "total_hours": 125.48222222222223,
     "total_local_gb_usage": 0,
     "tenant_id": "%(tenant_id)s",
-    "stop": "2012-01-31T23:59:59.000000",
-    "start": "2012-01-01T00:00:00.000000",
+    "stop": "2012-01-31 23:59:59",
+    "start": "2012-01-01 00:00:00",
     "server_usages": [
         {
             "memory_mb": %(flavor_ram)s,
@@ -133,8 +139,7 @@ USAGE_DATA = """
             "hours": 122.87361111111112,
             "vcpus": %(flavor_vcpus)s,
             "flavor": "%(flavor_name)s",
-            "local_gb": %(flavor_disk)s,
-            "instance_id": "063cf7f3-ded1-4297-bc4c-31eae876cc92"
+            "local_gb": %(flavor_disk)s
         },
         {
             "memory_mb": %(flavor_ram)s,
@@ -147,8 +152,7 @@ USAGE_DATA = """
             "hours": 2.608611111111111,
             "vcpus": %(flavor_vcpus)s,
             "flavor": "%(flavor_name)s",
-            "local_gb": %(flavor_disk)s,
-            "instance_id": "063cf7f3-ded1-4297-bc4c-31eae876cc93"
+            "local_gb": %(flavor_disk)s
         }
     ]
 }
@@ -160,17 +164,30 @@ def data(TEST):
     TEST.flavors = utils.TestDataContainer()
     TEST.flavor_access = utils.TestDataContainer()
     TEST.keypairs = utils.TestDataContainer()
+    TEST.security_groups = utils.TestDataContainer()
+    TEST.security_groups_uuid = utils.TestDataContainer()
+    TEST.security_group_rules = utils.TestDataContainer()
+    TEST.security_group_rules_uuid = utils.TestDataContainer()
     TEST.volumes = utils.TestDataContainer()
     TEST.quotas = utils.TestDataContainer()
     TEST.quota_usages = utils.TestDataContainer()
+    TEST.disabled_quotas = utils.TestDataContainer()
+    TEST.floating_ips = utils.TestDataContainer()
+    TEST.floating_ips_uuid = utils.TestDataContainer()
     TEST.usages = utils.TestDataContainer()
     TEST.certs = utils.TestDataContainer()
+    TEST.volume_snapshots = utils.TestDataContainer()
+    TEST.volume_types = utils.TestDataContainer()
     TEST.availability_zones = utils.TestDataContainer()
     TEST.hypervisors = utils.TestDataContainer()
     TEST.services = utils.TestDataContainer()
     TEST.aggregates = utils.TestDataContainer()
     TEST.hosts = utils.TestDataContainer()
-    TEST.server_groups = utils.TestDataContainer()
+
+    # Data return by novaclient.
+    # It is used if API layer does data conversion.
+    TEST.api_floating_ips = utils.TestDataContainer()
+    TEST.api_floating_ips_uuid = utils.TestDataContainer()
 
     # Volumes
     volume = volumes.Volume(
@@ -230,6 +247,14 @@ def data(TEST):
     TEST.volumes.add(attached_volume)
     TEST.volumes.add(non_bootable_volume)
 
+    vol_type1 = volume_types.VolumeType(volume_types.VolumeTypeManager(None),
+                                        {'id': 1,
+                                         'name': 'vol_type_1'})
+    vol_type2 = volume_types.VolumeType(volume_types.VolumeTypeManager(None),
+                                        {'id': 2,
+                                         'name': 'vol_type_2'})
+    TEST.volume_types.add(vol_type1, vol_type2)
+
     # Flavors
     flavor_1 = flavors.Flavor(flavors.FlavorManager(None),
                               {'id': "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
@@ -238,7 +263,6 @@ def data(TEST):
                                'disk': 0,
                                'ram': 512,
                                'swap': 0,
-                               'rxtx_factor': 1,
                                'extra_specs': {},
                                'os-flavor-access:is_public': True,
                                'OS-FLV-EXT-DATA:ephemeral': 0})
@@ -249,7 +273,6 @@ def data(TEST):
                                'disk': 1024,
                                'ram': 10000,
                                'swap': 0,
-                               'rxtx_factor': 1,
                                'extra_specs': {'Trusted': True, 'foo': 'bar'},
                                'os-flavor-access:is_public': True,
                                'OS-FLV-EXT-DATA:ephemeral': 2048})
@@ -260,7 +283,6 @@ def data(TEST):
                                'disk': 1024,
                                'ram': 10000,
                                'swap': 0,
-                               'rxtx_factor': 1,
                                'extra_specs': {},
                                'os-flavor-access:is_public': False,
                                'OS-FLV-EXT-DATA:ephemeral': 2048})
@@ -271,7 +293,6 @@ def data(TEST):
                                'disk': 1024,
                                'ram': 10000,
                                'swap': 0,
-                               'rxtx_factor': 1,
                                'extra_specs': FlavorExtraSpecs(
                                    {'key': 'key_mock',
                                     'value': 'value_mock'}),
@@ -295,20 +316,104 @@ def data(TEST):
                                dict(name='keyName'))
     TEST.keypairs.add(keypair)
 
+    # Security Groups and Rules
+    def generate_security_groups(is_uuid=False):
+
+        def get_id(is_uuid):
+            global current_int_id
+            if is_uuid:
+                return str(uuid.uuid4())
+            else:
+                get_id.current_int_id += 1
+                return get_id.current_int_id
+
+        get_id.current_int_id = 0
+
+        sg_manager = sec_groups.SecurityGroupManager(None)
+        rule_manager = rules.SecurityGroupRuleManager(None)
+
+        sec_group_1 = sec_groups.SecurityGroup(sg_manager,
+                                               {"rules": [],
+                                                "tenant_id": TEST.tenant.id,
+                                                "id": get_id(is_uuid),
+                                                "name": u"default",
+                                                "description": u"default"})
+        sec_group_2 = sec_groups.SecurityGroup(sg_manager,
+                                               {"rules": [],
+                                                "tenant_id": TEST.tenant.id,
+                                                "id": get_id(is_uuid),
+                                                "name": u"other_group",
+                                                "description": u"NotDefault."})
+        sec_group_3 = sec_groups.SecurityGroup(sg_manager,
+                                               {"rules": [],
+                                                "tenant_id": TEST.tenant.id,
+                                                "id": get_id(is_uuid),
+                                                "name": u"another_group",
+                                                "description": u"NotDefault."})
+
+        rule = {'id': get_id(is_uuid),
+                'group': {},
+                'ip_protocol': u"tcp",
+                'from_port': u"80",
+                'to_port': u"80",
+                'parent_group_id': sec_group_1.id,
+                'ip_range': {'cidr': u"0.0.0.0/32"}}
+
+        icmp_rule = {'id': get_id(is_uuid),
+                     'group': {},
+                     'ip_protocol': u"icmp",
+                     'from_port': u"9",
+                     'to_port': u"5",
+                     'parent_group_id': sec_group_1.id,
+                     'ip_range': {'cidr': u"0.0.0.0/32"}}
+
+        group_rule = {'id': 3,
+                      'group': {},
+                      'ip_protocol': u"tcp",
+                      'from_port': u"80",
+                      'to_port': u"80",
+                      'parent_group_id': sec_group_1.id,
+                      'source_group_id': sec_group_1.id}
+
+        rule_obj = rules.SecurityGroupRule(rule_manager, rule)
+        rule_obj2 = rules.SecurityGroupRule(rule_manager, icmp_rule)
+        rule_obj3 = rules.SecurityGroupRule(rule_manager, group_rule)
+
+        sec_group_1.rules = [rule_obj]
+        sec_group_2.rules = [rule_obj]
+
+        return {"rules": [rule_obj, rule_obj2, rule_obj3],
+                "groups": [sec_group_1, sec_group_2, sec_group_3]}
+
+    sg_data = generate_security_groups()
+    TEST.security_group_rules.add(*sg_data["rules"])
+    TEST.security_groups.add(*sg_data["groups"])
+
+    sg_uuid_data = generate_security_groups(is_uuid=True)
+    TEST.security_group_rules_uuid.add(*sg_uuid_data["rules"])
+    TEST.security_groups_uuid.add(*sg_uuid_data["groups"])
+
     # Quota Sets
-    quota_data = {
-        'metadata_items': '1',
-        'injected_file_content_bytes': '1',
-        'ram': 10000,
-        'instances': '10',
-        'injected_files': '1',
-        'cores': '10',
-        'key_pairs': 100,
-        'injected_file_path_bytes': 255,
-    }
+    quota_data = dict(metadata_items='1',
+                      injected_file_content_bytes='1',
+                      volumes='1',
+                      gigabytes='1000',
+                      ram=10000,
+                      floating_ips='1',
+                      fixed_ips='10',
+                      instances='10',
+                      injected_files='1',
+                      cores='10',
+                      security_groups='10',
+                      security_group_rules='20')
     quota = quotas.QuotaSet(quotas.QuotaSetManager(None), quota_data)
     TEST.quotas.nova = base.QuotaSet(quota)
     TEST.quotas.add(base.QuotaSet(quota))
+
+    # nova quotas disabled when neutron is enabled
+    disabled_quotas_nova = ['floating_ips', 'fixed_ips',
+                            'security_groups', 'security_group_rules']
+    TEST.disabled_quotas.add(disabled_quotas_nova)
 
     # Quota Usages
     quota_usage_data = {'gigabytes': {'used': 0,
@@ -319,6 +424,10 @@ def data(TEST):
                                 'quota': 10000},
                         'cores': {'used': 0,
                                   'quota': 20},
+                        'floating_ips': {'used': 0,
+                                         'quota': 10},
+                        'security_groups': {'used': 0,
+                                            'quota': 10},
                         'volumes': {'used': 0,
                                     'quota': 10}}
     quota_usage = usage_quotas.QuotaUsage()
@@ -340,10 +449,10 @@ def data(TEST):
                            "maxTotalInstances": 10,
                            "maxTotalKeypairs": 100,
                            "maxTotalRAMSize": 10000,
-                           "totalCoresUsed": 2,
-                           "totalInstancesUsed": 2,
+                           "totalCoresUsed": 0,
+                           "totalInstancesUsed": 0,
                            "totalKeyPairsUsed": 0,
-                           "totalRAMUsed": 1024,
+                           "totalRAMUsed": 0,
                            "totalSecurityGroupsUsed": 0}}
     TEST.limits = limits
 
@@ -372,45 +481,56 @@ def data(TEST):
                 "server_id": "3"})
     server_3 = servers.Server(servers.ServerManager(None),
                               json.loads(SERVER_DATA % vals)['server'])
-    vals.update({"name": "server_4",
-                 "status": "PAUSED",
-                 "server_id": "4"})
-    server_4 = servers.Server(servers.ServerManager(None),
-                              json.loads(SERVER_DATA % vals)['server'])
-    TEST.servers.add(server_1, server_2, server_3, server_4)
+    TEST.servers.add(server_1, server_2, server_3)
 
     # VNC Console Data
-    console = {
-        u'console': {
-            u'url': u'http://example.com:6080/vnc_auto.html',
-            u'type': u'novnc'
-        }
-    }
+    console = {u'console': {u'url': u'http://example.com:6080/vnc_auto.html',
+                            u'type': u'novnc'}}
     TEST.servers.vnc_console_data = console
     # SPICE Console Data
-    console = {
-        u'console': {
-            u'url': u'http://example.com:6080/spice_auto.html',
-            u'type': u'spice'
-        }
-    }
+    console = {u'console': {u'url': u'http://example.com:6080/spice_auto.html',
+                            u'type': u'spice'}}
     TEST.servers.spice_console_data = console
     # RDP Console Data
-    console = {
-        u'console': {
-            u'url': u'http://example.com:6080/rdp_auto.html',
-            u'type': u'rdp'
-        }
-    }
+    console = {u'console': {u'url': u'http://example.com:6080/rdp_auto.html',
+                            u'type': u'rdp'}}
     TEST.servers.rdp_console_data = console
-    # MKS Console Data
-    console = {
-        u'remote_console': {
-            u'url': u'http://example.com:6080/mks_auto.html',
-            u'type': u'mks'
-        }
-    }
-    TEST.servers.mks_console_data = console
+
+    # Floating IPs
+    def generate_fip(conf):
+        return floating_ips.FloatingIP(floating_ips.FloatingIPManager(None),
+                                       conf)
+
+    fip_1 = {'id': 1,
+             'fixed_ip': '10.0.0.4',
+             'instance_id': server_1.id,
+             'ip': '58.58.58.58',
+             'pool': 'pool1'}
+    fip_2 = {'id': 2,
+             'fixed_ip': None,
+             'instance_id': None,
+             'ip': '58.58.58.58',
+             'pool': 'pool2'}
+    TEST.api_floating_ips.add(generate_fip(fip_1), generate_fip(fip_2))
+
+    TEST.floating_ips.add(nova.FloatingIp(generate_fip(fip_1)),
+                          nova.FloatingIp(generate_fip(fip_2)))
+
+    # Floating IP with UUID id (for Floating IP with Neutron Proxy)
+    fip_3 = {'id': str(uuid.uuid4()),
+             'fixed_ip': '10.0.0.4',
+             'instance_id': server_1.id,
+             'ip': '58.58.58.58',
+             'pool': 'pool1'}
+    fip_4 = {'id': str(uuid.uuid4()),
+             'fixed_ip': None,
+             'instance_id': None,
+             'ip': '58.58.58.58',
+             'pool': 'pool2'}
+    TEST.api_floating_ips_uuid.add(generate_fip(fip_3), generate_fip(fip_4))
+
+    TEST.floating_ips_uuid.add(nova.FloatingIp(generate_fip(fip_3)),
+                               nova.FloatingIp(generate_fip(fip_4)))
 
     # Usage
     usage_vals = {"tenant_id": TEST.tenant.id,
@@ -432,6 +552,25 @@ def data(TEST):
     usage_obj_2 = usage.Usage(usage.UsageManager(None),
                               json.loads(USAGE_DATA % usage_2_vals))
     TEST.usages.add(usage_obj_2)
+
+    volume_snapshot = vol_snaps.Snapshot(
+        vol_snaps.SnapshotManager(None),
+        {'id': '40f3fabf-3613-4f5e-90e5-6c9a08333fc3',
+         'display_name': 'test snapshot',
+         'display_description': 'vol snap!',
+         'size': 40,
+         'status': 'available',
+         'volume_id': '41023e92-8008-4c8b-8059-7f2293ff3775'})
+    volume_snapshot2 = vol_snaps.Snapshot(
+        vol_snaps.SnapshotManager(None),
+        {'id': 'a374cbb8-3f99-4c3f-a2ef-3edbec842e31',
+         'display_name': '',
+         'display_description': 'vol snap 2!',
+         'size': 80,
+         'status': 'available',
+         'volume_id': '3b189ac8-9166-ac7f-90c9-16c8bf9e01ac'})
+    TEST.volume_snapshots.add(volume_snapshot)
+    TEST.volume_snapshots.add(volume_snapshot2)
 
     cert_data = {'private_key': 'private',
                  'data': 'certificate_data'}
@@ -479,7 +618,6 @@ def data(TEST):
             "local_gb": 29,
             "free_ram_mb": 500,
             "id": 1,
-            "servers": [{"name": "test_name", "uuid": "test_uuid"}]
         },
     )
 
@@ -490,7 +628,7 @@ def data(TEST):
             "vcpus_used": 1,
             "hypervisor_type": "QEMU",
             "local_gb_used": 20,
-            "hypervisor_hostname": "devstack001",
+            "hypervisor_hostname": "devstack002",
             "memory_mb_used": 1500,
             "memory_mb": 2000,
             "current_workload": 0,
@@ -506,7 +644,6 @@ def data(TEST):
             "local_gb": 29,
             "free_ram_mb": 500,
             "id": 2,
-            "servers": [{"name": "test_name_2", "uuid": "test_uuid_2"}]
         },
     )
     hypervisor_3 = hypervisors.Hypervisor(
@@ -586,20 +723,9 @@ def data(TEST):
         "disabled_reason": None,
     })
 
-    service_4 = services.Service(services.ServiceManager(None), {
-        "status": "disabled",
-        "binary": "nova-compute",
-        "zone": "nova",
-        "state": "up",
-        "updated_at": "2013-07-08T04:20:51.000000",
-        "host": "devstack003",
-        "disabled_reason": None,
-    })
-
     TEST.services.add(service_1)
     TEST.services.add(service_2)
     TEST.services.add(service_3)
-    TEST.services.add(service_4)
 
     # Aggregates
     aggregate_1 = aggregates.Aggregate(aggregates.AggregateManager(None), {
@@ -657,34 +783,3 @@ def data(TEST):
     TEST.hosts.add(host2)
     TEST.hosts.add(host3)
     TEST.hosts.add(host4)
-
-    server_group_1 = server_groups.ServerGroup(
-        server_groups.ServerGroupsManager(None),
-        {
-            "id": "1",
-            "name": "server_group_1",
-            "policies": [],
-        },
-    )
-
-    server_group_2 = server_groups.ServerGroup(
-        server_groups.ServerGroupsManager(None),
-        {
-            "id": "2",
-            "name": "server_group_2",
-            "policies": ["affinity", "some_other_policy"],
-        },
-    )
-
-    server_group_3 = server_groups.ServerGroup(
-        server_groups.ServerGroupsManager(None),
-        {
-            "id": "3",
-            "name": "server_group_3",
-            "policies": ["anti-affinity", "some_other_policy"],
-        },
-    )
-
-    TEST.server_groups.add(server_group_1)
-    TEST.server_groups.add(server_group_2)
-    TEST.server_groups.add(server_group_3)

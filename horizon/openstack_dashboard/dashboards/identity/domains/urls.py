@@ -12,24 +12,16 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from django.conf import settings
+from django.conf.urls import patterns
 from django.conf.urls import url
-from django.utils.translation import ugettext_lazy as _
 
-from horizon.browsers import views
-
-from openstack_dashboard.dashboards.identity.domains import views as legacyView
+from openstack_dashboard.dashboards.identity.domains import views
 
 
-if settings.ANGULAR_FEATURES.get('domains_panel'):
-    title = _("Domains")
-    urlpatterns = [
-        url('', views.AngularIndexView.as_view(title=title), name='index'),
-    ]
-else:
-    urlpatterns = [
-        url(r'^$', legacyView.IndexView.as_view(), name='index'),
-        url(r'^create$', legacyView.CreateDomainView.as_view(), name='create'),
-        url(r'^(?P<domain_id>[^/]+)/update/$',
-            legacyView.UpdateDomainView.as_view(), name='update')
-    ]
+urlpatterns = patterns(
+    '',
+    url(r'^$', views.IndexView.as_view(), name='index'),
+    url(r'^create$', views.CreateDomainView.as_view(), name='create'),
+    url(r'^(?P<domain_id>[^/]+)/update/$',
+        views.UpdateDomainView.as_view(), name='update')
+)

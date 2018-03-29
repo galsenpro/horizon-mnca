@@ -29,54 +29,91 @@ from openstack_dashboard.dashboards.project.networks.ports \
 LOG = logging.getLogger(__name__)
 
 
-class CreatePort(project_forms.CreatePort):
-    binding__host_id = forms.CharField(
-        label=_("Binding: Host"),
-        help_text=_("The ID of the host where the port is allocated. In some "
-                    "cases, different implementations can run on different "
-                    "hosts."),
-        required=False)
-    failure_url = 'horizon:admin:networks:detail'
+class CreatePort(forms.SelfHandlingForm):
+    network_name = forms.CharField(label=_("Network Name"),
+                                   widget=forms.TextInput(
+                                       attrs={'readonly': 'readonly'}))
+    network_id = forms.CharField(label=_("Network ID"),
+                                 widget=forms.TextInput(
+                                     attrs={'readonly': 'readonly'}))
+    name = forms.CharField(max_length=255,
+                           label=_("Name"),
+                           required=False)
+    # TODO(amotoki): make UP/DOWN translatable
+    admin_state = forms.ChoiceField(choices=[(True, 'UP'), (False, 'DOWN')],
+                                    label=_("Admin State"))
+    device_id = forms.CharField(max_length=100, label=_("Device ID"),
+                                help_text=_("Device ID attached to the port"),
+                                required=False)
+    device_owner = forms.CharField(max_length=100, label=_("Device Owner"),
+                                   help_text=_("Device owner attached to the "
+                                               "port"),
+                                   required=False)
+
+    def __init__(self, request, *args, **kwargs):
+        super(CreatePort, self).__init__(request, *args, **kwargs)
+        if api.neutron.is_extension_supported(request, 'mac-learning'):
+            self.fields['mac_state'] = forms.BooleanField(
+                label=_("MAC Learning State"), initial=False, required=False)
 
     def handle(self, request, data):
-        network_id = self.initial['network_id']
         try:
             # We must specify tenant_id of the network which a subnet is
             # created for if admin user does not belong to the tenant.
-            network = api.neutron.network_get(request, network_id)
-            params = {
-                'tenant_id': network.tenant_id,
-                'network_id': network_id,
-                'admin_state_up': data['admin_state'],
-                'name': data['name'],
-                'device_id': data['device_id'],
-                'device_owner': data['device_owner'],
-                'binding__host_id': data['binding__host_id']
-            }
+            network = api.neutron.network_get(request, data['network_id'])
+            data['tenant_id'] = network.tenant_id
+            data['admin_state_up'] = (data['admin_state'] == 'True')
+            del data['network_name']
+            del data['admin_state']
+            if 'mac_state' in data:
+                data['mac_learning_enabled'] = data['mac_state']
+                del data['mac_state']
 
-            if data.get('specify_ip') == 'subnet_id':
-                if data.get('subnet_id'):
-                    params['fixed_ips'] = [{"subnet_id": data['subnet_id']}]
-            elif data.get('specify_ip') == 'fixed_ip':
-                if data.get('fixed_ip'):
-                    params['fixed_ips'] = [{"ip_address": data['fixed_ip']}]
-
-            if data.get('binding__vnic_type'):
-                params['binding__vnic_type'] = data['binding__vnic_type']
-
-            if data.get('mac_state'):
-                params['mac_learning_enabled'] = data['mac_state']
-
-            if 'port_security_enabled' in data:
-                params['port_security_enabled'] = data['port_security_enabled']
-
-            port = api.neutron.port_create(request, **params)
+            port = api.neutron.port_create(request, **data)
             msg = _('Port %s was successfully created.') % port['id']
+            LOG.debug(msg)
             messages.success(request, msg)
             return port
-        except Exception as e:
-            LOG.info('Failed to create a port for network %(id)s: %(exc)s',
-                     {'id': network_id, 'exc': e})
-            msg = _('Failed to create a port for network %s') % network_id
-            redirect = reverse(self.failure_url, args=(network_id,))
+        except Exception:
+            msg = _('Failed to create a port for network %s') \
+                % data['network_id']
+            LOG.info(msg)
+            redirect = reverse('horizon:admin:networks:detail',
+                               args=(data['network_id'],))
+            exceptions.handle(request, msg, redirect=redirect)
+
+
+class UpdatePort(project_forms.UpdatePort):
+    # tenant_id = forms.CharField(widget=forms.HiddenInput())
+    device_id = forms.CharField(max_length=100, label=_("Device ID"),
+                                help_text=_("Device ID attached to the port"),
+                                required=False)
+    device_owner = forms.CharField(max_length=100, label=_("Device Owner"),
+                                   help_text=_("Device owner attached to the "
+                                               "port"),
+                                   required=False)
+    failure_url = 'horizon:admin:networks:detail'
+
+    def handle(self, request, data):
+        try:
+            LOG.debug('params = %s' % data)
+            extension_kwargs = {}
+            data['admin_state'] = (data['admin_state'] == 'True')
+            if 'mac_state' in data:
+                extension_kwargs['mac_learning_enabled'] = data['mac_state']
+            port = api.neutron.port_update(request, data['port_id'],
+                                           name=data['name'],
+                                           admin_state_up=data['admin_state'],
+                                           device_id=data['device_id'],
+                                           device_owner=data['device_owner'],
+                                           **extension_kwargs)
+            msg = _('Port %s was successfully updated.') % data['port_id']
+            LOG.debug(msg)
+            messages.success(request, msg)
+            return port
+        except Exception:
+            msg = _('Failed to update port %s') % data['port_id']
+            LOG.info(msg)
+            redirect = reverse(self.failure_url,
+                               args=[data['network_id']])
             exceptions.handle(request, msg, redirect=redirect)

@@ -1,418 +1,505 @@
-# OpenStack Infra <zanata@openstack.org>, 2015. #zanata
-# Tom Fifield <tom@openstack.org>, 2015. #zanata
-# Andreas Jaeger <jaegerandi@gmail.com>, 2016. #zanata
-# Tom Fifield <tom@openstack.org>, 2016. #zanata
-# Tom Fifield <tom@openstack.org>, 2017. #zanata
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# 
+# Translators:
+# Tom Fifield <tom@openstack.org>, 2014
 msgid ""
 msgstr ""
-"Project-Id-Version: horizon 13.0.0.0b2.dev82\n"
-"Report-Msgid-Bugs-To: https://bugs.launchpad.net/openstack-i18n/\n"
-"POT-Creation-Date: 2017-11-15 05:06+0000\n"
+"Project-Id-Version: Horizon\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2014-10-05 14:55+0000\n"
+"PO-Revision-Date: 2014-10-04 04:45+0000\n"
+"Last-Translator: Tom Fifield <tom@openstack.org>\n"
+"Language-Team: English (Australia) (http://www.transifex.com/projects/p/horizon/language/en_AU/)\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"PO-Revision-Date: 2017-08-21 06:38+0000\n"
-"Last-Translator: Tom Fifield <tom@openstack.org>\n"
-"Language-Team: English (Australia)\n"
-"Language: en-AU\n"
-"X-Generator: Zanata 3.9.6\n"
-"Plural-Forms: nplurals=2; plural=(n != 1)\n"
+"Language: en_AU\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
+#: base.py:454
+msgid "Other"
+msgstr "Other"
+
+#: decorators.py:53
+msgid "Please log in to continue."
+msgstr "Please log in to continue."
+
+#: decorators.py:85
 #, python-format
-msgid "%(action)s: %(objs)s"
-msgstr "%(action)s: %(objs)s"
+msgid "You are not authorized to access %s"
+msgstr "You are not authorised to access %s"
 
-#, python-format
-msgid "%(context_name)s:"
-msgstr "%(context_name)s:"
-
-#, python-format
-msgid "%(name)s: %(error)s"
-msgstr "%(name)s: %(error)s"
-
-#, python-format
-msgid "%(size)d Byte"
-msgid_plural "%(size)d Bytes"
-msgstr[0] "%(size)d Byte"
-msgstr[1] "%(size)d Bytes"
-
-#, python-format
-msgid "%s EB"
-msgstr "%s EB"
-
-#, python-format
-msgid "%s GB"
-msgstr "%s GB"
-
-#, python-format
-msgid "%s KB"
-msgstr "%s KB"
-
-#, python-format
-msgid "%s MB"
-msgstr "%s MB"
-
-#, python-format
-msgid "%s PB"
-msgstr "%s PB"
-
-#, python-format
-msgid "%s TB"
-msgstr "%s TB"
-
-#, python-format
-msgid "%s YB"
-msgstr "%s YB"
-
-#, python-format
-msgid "%s ZB"
-msgstr "%s ZB"
-
-#, python-format
-msgid "%s completed successfully."
-msgstr "%s completed successfully."
-
-#, python-format
-msgid "%s did not complete."
-msgstr "%s did not complete."
-
-msgid "&laquo;&nbsp;Prev"
-msgstr "&laquo;&nbsp;Prev"
-
-msgid "(No Limit)"
-msgstr "(No Limit)"
-
-msgid "-"
-msgstr "-"
-
-msgid "0 Bytes"
-msgstr "0 Bytes"
-
+#: exceptions.py:163
 #, python-format
 msgid "A %(resource)s with the name \"%(name)s\" already exists."
 msgstr "A %(resource)s with the name \"%(name)s\" already exists."
 
-msgid "Actions"
-msgstr "Actions"
+#: exceptions.py:287
+#, python-format
+msgid "Unauthorized: %s"
+msgstr "Unauthorised: %s"
 
-msgid "Active Instances:"
-msgstr "Active Instances:"
+#: exceptions.py:290
+msgid "Unauthorized. Please try logging in again."
+msgstr "Unauthorised. Please try logging in again."
 
-msgid "Active RAM:"
-msgstr "Active RAM:"
+#: middleware.py:97
+msgid "Session timed out."
+msgstr "Session timed out."
 
-msgid "Add a row"
-msgstr "Add a row"
+#: browsers/base.py:88
+msgid "Navigation Item"
+msgstr "Navigation Item"
 
-msgid "All available"
-msgstr "All available"
+#: browsers/views.py:41
+#, python-format
+msgid "Select a %s to browse."
+msgstr "Select a %s to browse."
 
-msgid "Available"
-msgstr "Available"
+#: conf/default.py:41
+msgid "Password is not accepted"
+msgstr "Password is not accepted"
 
-msgid "Back"
-msgstr "Back"
+#: forms/fields.py:64
+msgid "Incorrect format for IP address"
+msgstr "Incorrect format for IP address"
 
-#. Translators: test code, don't really have to translate
-msgid "Batch Item"
-msgid_plural "Batch Items"
-msgstr[0] "Batch Item"
-msgstr[1] "Batch Items"
+#: forms/fields.py:65
+msgid "Invalid version for IP address"
+msgstr "Invalid version for IP address"
 
-#. Translators: test code, don't really have to translate
-msgid "Batched Item"
-msgid_plural "Batched Items"
-msgstr[0] "Batched Item"
-msgstr[1] "Batched Items"
+#: forms/fields.py:66
+msgid "Invalid subnet mask"
+msgstr "Invalid subnet mask"
 
+#: forms/views.py:81 templates/horizon/common/_usage_summary.html:16
+msgid "Submit"
+msgstr "Submit"
+
+#: forms/views.py:82
+#: templates/horizon/common/_modal_form_update_metadata.html:239
+#: templates/horizon/common/_workflow.html:49
 msgid "Cancel"
 msgstr "Cancel"
 
-msgid "Connect"
-msgstr "Connect"
+#: tables/actions.py:460
+#: templates/horizon/common/_data_table_table_actions.html:16
+#: templates/horizon/common/_data_table_table_actions.html:26
+#: templates/horizon/common/_workflow_step_update_members.html:12
+#: templates/horizon/common/_workflow_step_update_members.html:21
+msgid "Filter"
+msgstr "Filter"
 
+#: tables/actions.py:756
 #, python-format
-msgid "Displaying %(content_items)s item"
-msgid_plural "Displaying %(content_items)s items"
-msgstr[0] "Displaying %(content_items)s item"
-msgstr[1] "Displaying %(content_items)s items"
+msgctxt "past"
+msgid "%(action)s %(data_type)s"
+msgstr "%(action)s %(data_type)s"
 
+#: tables/actions.py:758
+#, python-format
+msgctxt "present"
+msgid "%(action)s %(data_type)s"
+msgstr "%(action)s %(data_type)s"
+
+#: tables/actions.py:786 tables/base.py:1537
+msgid "N/A"
+msgstr "N/A"
+
+#: tables/actions.py:815
+#, python-format
+msgid "You are not allowed to %(action)s: %(objs)s"
+msgstr "You are not allowed to %(action)s: %(objs)s"
+
+#: tables/actions.py:822
+#, python-format
+msgid "Unable to %(action)s: %(objs)s"
+msgstr "Unable to %(action)s: %(objs)s"
+
+#: tables/actions.py:828
+#, python-format
+msgid "%(action)s: %(objs)s"
+msgstr "%(action)s: %(objs)s"
+
+#: tables/actions.py:898
+msgid "Delete"
+msgstr "Delete"
+
+#: tables/actions.py:900
+msgid "Deleted"
+msgstr "Deleted"
+
+#: tables/actions.py:931
+msgid "Update"
+msgstr "Update"
+
+#: tables/actions.py:932
+msgid "Updated"
+msgstr "Updated"
+
+#: tables/base.py:355
+#, python-format
+msgid "The attribute %(attr)s doesn't exist on %(obj)s."
+msgstr "The attribute %(attr)s doesn't exist on %(obj)s."
+
+#: tables/base.py:967
+msgid "No items to display."
+msgstr "No items to display."
+
+#: tables/base.py:1074
+#: templates/horizon/common/_data_table_table_actions.html:40
+msgid "Actions"
+msgstr "Actions"
+
+#: tables/base.py:1302
+#, python-format
+msgid "No match returned for the id \"%s\"."
+msgstr "No match returned for the id \"%s\"."
+
+#: tables/base.py:1453
+msgid "Please select a row before taking that action."
+msgstr "Please select a row before taking that action."
+
+#: templates/_header.html:5
+#, python-format
+msgid "Logged in as: %(username)s"
+msgstr "Logged in as: %(username)s"
+
+#: templates/_header.html:7
+msgid "Help"
+msgstr "Help"
+
+#: templates/_header.html:9
+msgid "Sign Out"
+msgstr "Sign Out"
+
+#: templates/splash.html:8 templates/auth/login.html:4
+msgid "Login"
+msgstr "Login"
+
+#: templates/auth/_login.html:5
+msgid "Log In"
+msgstr "Log In"
+
+#: templates/auth/_login.html:15
+msgid "You do not have permission to access the resource:"
+msgstr "You do not have permission to access the resource:"
+
+#: templates/auth/_login.html:17
+#, python-format
+msgid ""
+"Login as different user or go back to <a href=\"%(home_url)s\"> home "
+"page</a>"
+msgstr "Login as different user or go back to <a href=\"%(home_url)s\"> home page</a>"
+
+#: templates/auth/_login.html:32
+msgid "Sign In"
+msgstr "Sign In"
+
+#: templates/horizon/_messages.html:7
+msgid "Info: "
+msgstr "Info: "
+
+#: templates/horizon/_messages.html:13
+msgid "Warning: "
+msgstr "Warning: "
+
+#: templates/horizon/_messages.html:19
+msgid "Success: "
+msgstr "Success: "
+
+#: templates/horizon/_messages.html:25
+msgid "Error: "
+msgstr "Error: "
+
+#: templates/horizon/common/_data_table.html:54
+msgid "Summary"
+msgstr "Summary"
+
+#: templates/horizon/common/_data_table.html:63
 #, python-format
 msgid "Displaying %(counter)s item"
 msgid_plural "Displaying %(counter)s items"
 msgstr[0] "Displaying %(counter)s item"
 msgstr[1] "Displaying %(counter)s items"
 
+#: templates/horizon/common/_data_table.html:68
+msgid "&laquo;&nbsp;Prev"
+msgstr "&laquo;&nbsp;Prev"
+
+#: templates/horizon/common/_data_table.html:71
+msgid "Next&nbsp;&raquo;"
+msgstr "Next&nbsp;&raquo;"
+
+#: templates/horizon/common/_data_table_table_actions.html:38
+msgid "More Actions"
+msgstr "More Actions"
+
+#: templates/horizon/common/_formset_table.html:35
+msgid "Add a row"
+msgstr "Add a row"
+
+#: templates/horizon/common/_limit_summary.html:4
+msgid "Limit Summary"
+msgstr "Limit Summary"
+
+#: templates/horizon/common/_limit_summary.html:7
+msgid "Instances"
+msgstr "Instances"
+
+#: templates/horizon/common/_limit_summary.html:8
+#: templates/horizon/common/_limit_summary.html:15
+#: templates/horizon/common/_limit_summary.html:22
+#: templates/horizon/common/_limit_summary.html:29
+#: templates/horizon/common/_limit_summary.html:36
+#: templates/horizon/common/_limit_summary.html:43
+#: templates/horizon/common/_limit_summary.html:50
+#, python-format
+msgid "Used <span> %(used)s </span> of <span> %(available)s </span>"
+msgstr "Used <span> %(used)s </span> of <span> %(available)s </span>"
+
+#: templates/horizon/common/_limit_summary.html:14
+msgid "VCPUs"
+msgstr "VCPUs"
+
+#: templates/horizon/common/_limit_summary.html:21
+msgid "RAM"
+msgstr "RAM"
+
+#: templates/horizon/common/_limit_summary.html:28
+msgid "Floating IPs"
+msgstr "Floating IPs"
+
+#: templates/horizon/common/_limit_summary.html:35
+msgid "Security Groups"
+msgstr "Security Groups"
+
+#: templates/horizon/common/_limit_summary.html:42
+msgid "Volumes"
+msgstr "Volumes"
+
+#: templates/horizon/common/_limit_summary.html:49
+msgid "Volume Storage"
+msgstr "Volume Storage"
+
+#: templates/horizon/common/_modal_form_update_metadata.html:12
+msgid ""
+"\n"
+"        You can specify metadata by adding items from the left column to\n"
+"        the right column. You may select the metadata added to glance\n"
+"        dictionary or you can use the \"Other\" option using a key of\n"
+"        your choice.\n"
+"      "
+msgstr "\n        You can specify metadata by adding items from the left column to\n        the right column. You may select the metadata added to glance\n        dictionary or you can use the \"Other\" option using a key of\n        your choice.\n      "
+
+#: templates/horizon/common/_modal_form_update_metadata.html:26
+msgid "Available Metadata"
+msgstr "Available Metadata"
+
+#: templates/horizon/common/_modal_form_update_metadata.html:56
+msgid "Duplicate keys are not allowed"
+msgstr "Duplicate keys are not allowed"
+
+#: templates/horizon/common/_modal_form_update_metadata.html:59
+msgid "Invalid key name"
+msgstr "Invalid key name"
+
+#: templates/horizon/common/_modal_form_update_metadata.html:88
+#: templates/horizon/common/_modal_form_update_metadata.html:200
+msgid "No existing metadata"
+msgstr "No existing metadata"
+
+#: templates/horizon/common/_modal_form_update_metadata.html:99
+msgid "Existing Metadata"
+msgstr "Existing Metadata"
+
+#: templates/horizon/common/_modal_form_update_metadata.html:216
+msgid ""
+"\n"
+"          You can specify resource metadata by moving items from the left\n"
+"          column to the right column. In the left columns there are metadata\n"
+"          definitions from the Glance Metadata Catalog. Use the \"Other\" option\n"
+"          to add metadata with the key of your choice.\n"
+"        "
+msgstr "\n          You can specify resource metadata by moving items from the left\n          column to the right column. In the left columns there are metadata\n          definitions from the Glance Metadata Catalog. Use the \"Other\" option\n          to add metadata with the key of your choice.\n        "
+
+#: templates/horizon/common/_modal_form_update_metadata.html:238
+#: workflows/base.py:594
+msgid "Save"
+msgstr "Save"
+
+#: templates/horizon/common/_resource_browser.html:10
 #, python-format
 msgid "Displaying %(nav_items)s item"
 msgid_plural "Displaying %(nav_items)s items"
 msgstr[0] "Displaying %(nav_items)s item"
 msgstr[1] "Displaying %(nav_items)s items"
 
-#. Translators: test code, don't really have to translate
-msgid "Down Item"
-msgid_plural "Down Items"
-msgstr[0] "Down Item"
-msgstr[1] "Down Items"
-
-#. Translators: test code, don't really have to translate
-msgid "Downed Item"
-msgid_plural "Downed Items"
-msgstr[0] "Downed Item"
-msgstr[1] "Downed Items"
-
+#: templates/horizon/common/_resource_browser.html:11
 #, python-format
-msgid "Error processing message json file '%(path)s': %(exception)s"
-msgstr "Error processing message json file '%(path)s': %(exception)s"
+msgid "Displaying %(content_items)s item"
+msgid_plural "Displaying %(content_items)s items"
+msgstr[0] "Displaying %(content_items)s item"
+msgstr[1] "Displaying %(content_items)s items"
 
-msgid "Error: "
-msgstr "Error: "
+#: templates/horizon/common/_usage_summary.html:3
+msgid "Usage Summary"
+msgstr "Usage Summary"
 
-msgid "Fake"
-msgstr "Fake"
+#: templates/horizon/common/_usage_summary.html:7
+msgid "Select a period of time to query its usage"
+msgstr "Select a period of time to query its usage"
 
-msgid "Filter"
-msgstr "Filter"
-
-msgid "Horizon"
-msgstr "Horizon"
-
-msgid ""
-"If you are not sure which authentication method to use, contact your "
-"administrator."
-msgstr ""
-"If you are not sure which authentication method to use, contact your "
-"administrator."
-
-msgid "Incorrect format for IP address"
-msgstr "Incorrect format for IP address"
-
-msgid "Infinity"
-msgstr "Infinity"
-
-msgid "Info: "
-msgstr "Info: "
-
-msgid "Invalid MAC Address format"
-msgstr "Invalid MAC Address format"
-
-msgid "Invalid metadata entry. Use comma-separated key=value pairs"
-msgstr "Invalid metadata entry. Use comma-separated key=value pairs"
-
-msgid "Invalid subnet mask"
-msgstr "Invalid subnet mask"
-
-msgid "Invalid version for IP address"
-msgstr "Invalid version for IP address"
-
-msgid "Keystone Providers:"
-msgstr "Keystone Providers:"
-
-msgid "Limit Summary"
-msgstr "Limit Summary"
-
-msgid "Log in"
-msgstr "Log in"
-
-msgid "Login"
-msgstr "Login"
-
+#: templates/horizon/common/_usage_summary.html:9
 #, python-format
 msgid ""
-"Login as different user or go back to <a href=\"%(home_url)s\">home page</a>"
-msgstr ""
-"Login as different user or go back to <a href=\"%(home_url)s\">home page</a>"
+"\n"
+"      <label>From:</label> %(start)s"
+msgstr "\n      <label>From:</label> %(start)s"
 
-msgid "Members"
-msgstr "Members"
-
+#: templates/horizon/common/_usage_summary.html:13
 #, python-format
-msgid "Message json file '%(path)s' is malformed. %(exception)s"
-msgstr "Message json file '%(path)s' is malformed. %(exception)s"
+msgid ""
+"\n"
+"      <label>To:</label>%(end)s"
+msgstr "\n      <label>To:</label>%(end)s"
 
-msgid "More Actions"
-msgstr "More Actions"
+#: templates/horizon/common/_usage_summary.html:17
+msgid "The date should be in YYYY-mm-dd format."
+msgstr "The date should be in YYYY-mm-dd format."
 
-msgid "Navigation Item"
-msgstr "Navigation Item"
+#: templates/horizon/common/_usage_summary.html:20
+msgid "Active Instances"
+msgstr "Active Instances"
 
-msgid "Never"
-msgstr "Never"
+#: templates/horizon/common/_usage_summary.html:21
+msgid "Active RAM"
+msgstr "Active RAM"
 
+#: templates/horizon/common/_usage_summary.html:22
+msgid "This Period's VCPU-Hours"
+msgstr "This Period's VCPU-Hours"
+
+#: templates/horizon/common/_usage_summary.html:23
+msgid "This Period's GB-Hours"
+msgstr "This Period's GB-Hours"
+
+#: templates/horizon/common/_workflow.html:40
+msgid "Back"
+msgstr "Back"
+
+#: templates/horizon/common/_workflow.html:43
 msgid "Next"
 msgstr "Next"
 
-msgid "Next&nbsp;&raquo;"
-msgstr "Next&nbsp;&raquo;"
+#: templatetags/branding.py:34
+msgid "Horizon"
+msgstr "Horizon"
 
-msgid "No items to display."
-msgstr "No items to display."
+#: templatetags/horizon.py:130 templatetags/horizon.py:141
+msgid "No Limit"
+msgstr "No Limit"
 
+#: templatetags/horizon.py:133 templatetags/horizon.py:135
+msgid "Available"
+msgstr "Available"
+
+#: templatetags/sizeformat.py:49 templatetags/sizeformat.py:54
 #, python-format
-msgid "No match returned for the id \"%s\"."
-msgstr "No match returned for the id \"%s\"."
+msgid "%(size)d Byte"
+msgid_plural "%(size)d Bytes"
+msgstr[0] "%(size)d Byte"
+msgstr[1] "%(size)d Bytes"
 
-msgid "No members."
-msgstr "No members."
-
-msgid "None available."
-msgstr "None available."
-
-msgid "Not a valid ICMP code"
-msgstr "Not a valid ICMP code"
-
-msgid "Not a valid ICMP type"
-msgstr "Not a valid ICMP type"
-
-msgid "Not a valid IP protocol number"
-msgstr "Not a valid IP protocol number"
-
-msgid "Not a valid port number"
-msgstr "Not a valid port number"
-
-msgid "One colon allowed in port range"
-msgstr "One colon allowed in port range"
-
-msgid "Other"
-msgstr "Other"
-
-msgid "Password is not accepted"
-msgstr "Password is not accepted"
-
-msgid "Please confirm your selection."
-msgstr "Please confirm your selection."
-
-msgid "Please log in to continue."
-msgstr "Please log in to continue."
-
-msgid "Please select a row before taking that action."
-msgstr "Please select a row before taking that action."
-
-msgid "Please specify a search criteria first."
-msgstr "Please specify a search criteria first."
-
-msgid "Processing..."
-msgstr "Processing..."
-
-msgid "Save"
-msgstr "Save"
-
+#: templatetags/sizeformat.py:57
 #, python-format
-msgid "Select a %s to browse."
-msgstr "Select a %s to browse."
+msgid "%s KB"
+msgstr "%s KB"
 
-msgid "Select a period of time to query its usage:"
-msgstr "Select a period of time to query its usage:"
+#: templatetags/sizeformat.py:60
+#, python-format
+msgid "%s MB"
+msgstr "%s MB"
 
-#. Translators: test code, don't really have to translate
+#: templatetags/sizeformat.py:63
+#, python-format
+msgid "%s GB"
+msgstr "%s GB"
+
+#: templatetags/sizeformat.py:66
+#, python-format
+msgid "%s TB"
+msgstr "%s TB"
+
+#: templatetags/sizeformat.py:68
+#, python-format
+msgid "%s PB"
+msgstr "%s PB"
+
+#: templatetags/sizeformat.py:77
+msgid "0 bytes"
+msgstr "0 bytes"
+
+#: test/test_dashboards/dogs/puppies/tables.py:31
 msgid "Sell Puppy"
 msgid_plural "Sell Puppies"
 msgstr[0] "Sell Puppy"
 msgstr[1] "Sell Puppies"
 
-msgid "Sign In"
-msgstr "Sign In"
-
-#. Translators: test code, don't really have to translate
+#: test/test_dashboards/dogs/puppies/tables.py:40
 msgid "Sold Puppy"
 msgid_plural "Sold Puppies"
 msgstr[0] "Sold Puppy"
 msgstr[1] "Sold Puppies"
 
-msgid "Submit"
-msgstr "Submit"
+#: utils/filters.py:49
+msgid "Never"
+msgstr "Never"
 
-msgid "Success: "
-msgstr "Success: "
+#: utils/validators.py:23 utils/validators.py:47
+msgid "Not a valid port number"
+msgstr "Not a valid port number"
 
-msgid "Summary"
-msgstr "Summary"
+#: utils/validators.py:28
+msgid "Not a valid IP protocol number"
+msgstr "Not a valid IP protocol number"
 
-msgid ""
-"The current user has insufficient permission to complete the requested task."
-msgstr ""
-"The current user has insufficient permission to complete the requested task."
+#: utils/validators.py:42
+msgid "One colon allowed in port range"
+msgstr "One colon allowed in port range"
 
-msgid "The date should be in YYYY-MM-DD format."
-msgstr "The date should be in YYYY-MM-DD format."
+#: utils/validators.py:49
+msgid "Port number must be integer"
+msgstr "Port number must be integer"
 
-msgid "The string may only contain ASCII printable characters."
-msgstr "The string may only contain ASCII printable characters."
+#: workflows/base.py:71
+msgid "Processing..."
+msgstr "Processing..."
 
+#: workflows/base.py:475
+msgid "All available"
+msgstr "All available"
+
+#: workflows/base.py:476
+msgid "Members"
+msgstr "Members"
+
+#: workflows/base.py:477
+msgid "None available."
+msgstr "None available."
+
+#: workflows/base.py:478
+msgid "No members."
+msgstr "No members."
+
+#: workflows/base.py:595
 #, python-format
-msgid ""
-"The value of %(resource)s is %(name)s inside the template. When launching a "
-"stack from this interface, the value must start with \"http://\" or "
-"\"https://\""
-msgstr ""
-"The value of %(resource)s is %(name)s inside the template. When launching a "
-"stack from this interface, the value must start with \"http://\" or "
-"\"https://\""
+msgid "%s completed successfully."
+msgstr "%s completed successfully."
 
-msgid "This Period's GB-Hours:"
-msgstr "This Period's GB-Hours:"
-
-msgid "This Period's RAM-Hours:"
-msgstr "This Period's RAM-Hours:"
-
-msgid "This Period's VCPU-Hours:"
-msgstr "This Period's VCPU-Hours:"
-
-msgid "This action cannot be undone."
-msgstr "This action cannot be undone."
-
+#: workflows/base.py:596
 #, python-format
-msgid "Unable to %(action)s: %(objs)s"
-msgstr "Unable to %(action)s: %(objs)s"
-
-msgid "Unauthorized. Please try logging in again."
-msgstr "Unauthorised. Please try logging in again."
-
-#, python-format
-msgid "Unauthorized: %s"
-msgstr "Unauthorised: %s"
-
-#. Translators: test code, don't really have to translate
-msgid "Up Item"
-msgid_plural "Up Items"
-msgstr[0] "Up Item"
-msgstr[1] "Up Items"
-
-msgid "Update Item"
-msgid_plural "Update Items"
-msgstr[0] "Update Item"
-msgstr[1] "Update Items"
-
-msgid "Updated Item"
-msgid_plural "Updated Items"
-msgstr[0] "Updated Item"
-msgstr[1] "Updated Items"
-
-#. Translators: test code, don't really have to translate
-msgid "Upped Item"
-msgid_plural "Upped Items"
-msgstr[0] "Upped Item"
-msgstr[1] "Upped Items"
-
-msgid "Usage Summary"
-msgstr "Usage Summary"
-
-msgid "Warning: "
-msgstr "Warning: "
-
-#, python-format
-msgid "You are not allowed to %(action)s: %(objs)s"
-msgstr "You are not allowed to %(action)s: %(objs)s"
-
-#, python-format
-msgid "You are not authorized to access %s"
-msgstr "You are not authorised to access %s"
-
-msgid "You do not have permission to access the resource:"
-msgstr "You do not have permission to access the resource:"
-
-msgid "You have selected: [[selection]]. "
-msgstr "You have selected: [[selection]]. "
-
-msgid "to"
-msgstr "to"
+msgid "%s did not complete."
+msgstr "%s did not complete."

@@ -19,7 +19,6 @@ from horizon import exceptions
 from horizon import forms
 from horizon import tabs
 from horizon.utils import memoized
-from horizon import workflows
 
 from openstack_dashboard import api
 
@@ -29,58 +28,11 @@ from openstack_dashboard.dashboards.project.networks.ports \
     import tables as project_tables
 from openstack_dashboard.dashboards.project.networks.ports \
     import tabs as project_tabs
-from openstack_dashboard.dashboards.project.networks.ports \
-    import workflows as project_workflows
 
 
-STATE_DICT = dict(project_tables.DISPLAY_CHOICES)
-STATUS_DICT = dict(project_tables.STATUS_DISPLAY_CHOICES)
-VNIC_TYPE_DICT = dict(api.neutron.VNIC_TYPES)
-
-
-class CreateView(forms.ModalFormView):
-    form_class = project_forms.CreatePort
-    form_id = "create_port_form"
-    modal_header = _("Create Port")
-    submit_label = _("Create Port")
-    submit_url = "horizon:project:networks:addport"
-    page_title = _("Create Port")
-    template_name = 'project/networks/ports/create.html'
-    url = 'horizon:project:networks:detail'
-
-    def get_success_url(self):
-        return reverse(self.url,
-                       args=(self.kwargs['network_id'],))
-
-    @memoized.memoized_method
-    def get_network(self):
-        try:
-            network_id = self.kwargs["network_id"]
-            return api.neutron.network_get(self.request, network_id)
-        except Exception:
-            redirect = reverse(self.url,
-                               args=(self.kwargs['network_id'],))
-            msg = _("Unable to retrieve network.")
-            exceptions.handle(self.request, msg, redirect=redirect)
-
-    def get_context_data(self, **kwargs):
-        context = super(CreateView, self).get_context_data(**kwargs)
-        context['network'] = self.get_network()
-        args = (self.kwargs['network_id'],)
-        context['submit_url'] = reverse(self.submit_url, args=args)
-        context['cancel_url'] = reverse(self.url, args=args)
-        return context
-
-    def get_initial(self):
-        network = self.get_network()
-        return {"network_id": self.kwargs['network_id'],
-                "network_name": network.name}
-
-
-class DetailView(tabs.TabbedTableView):
+class DetailView(tabs.TabView):
     tab_group_class = project_tabs.PortDetailTabs
-    template_name = 'horizon/common/_detail.html'
-    page_title = "{{ port.name|default:port.id }}"
+    template_name = 'project/networks/ports/detail.html'
 
     @memoized.memoized_method
     def get_data(self):
@@ -88,13 +40,6 @@ class DetailView(tabs.TabbedTableView):
 
         try:
             port = api.neutron.port_get(self.request, port_id)
-            port.admin_state_label = STATE_DICT.get(port.admin_state,
-                                                    port.admin_state)
-            port.status_label = STATUS_DICT.get(port.status,
-                                                port.status)
-            if port.get('binding__vnic_type'):
-                port.binding__vnic_type = VNIC_TYPE_DICT.get(
-                    port.binding__vnic_type, port.binding__vnic_type)
         except Exception:
             port = []
             redirect = self.get_redirect_url()
@@ -107,51 +52,11 @@ class DetailView(tabs.TabbedTableView):
 
         return port
 
-    @memoized.memoized_method
-    def get_network(self, network_id):
-        try:
-            network = api.neutron.network_get(self.request, network_id)
-        except Exception:
-            network = {}
-            msg = _('Unable to retrieve network details.')
-            exceptions.handle(self.request, msg)
-
-        return network
-
-    @memoized.memoized_method
-    def get_security_groups(self, sg_ids):
-        # Avoid extra API calls if no security group is associated.
-        if not sg_ids:
-            return []
-        try:
-            security_groups = api.neutron.security_group_list(self.request,
-                                                              id=sg_ids)
-        except Exception:
-            security_groups = []
-            msg = _("Unable to retrieve security groups for the port.")
-            exceptions.handle(self.request, msg)
-        return security_groups
-
     def get_context_data(self, **kwargs):
         context = super(DetailView, self).get_context_data(**kwargs)
         port = self.get_data()
-        network_url = "horizon:project:networks:detail"
-        subnet_url = "horizon:project:networks:subnets:detail"
-        network = self.get_network(port.network_id)
-        port.network_name = network.get('name')
-        port.network_url = reverse(network_url, args=[port.network_id])
-        for ip in port.fixed_ips:
-            ip['subnet_url'] = reverse(subnet_url, args=[ip['subnet_id']])
-        port.security_groups = self.get_security_groups(
-            tuple(port.security_groups))
         table = project_tables.PortsTable(self.request,
                                           network_id=port.network_id)
-        # TODO(robcresswell) Add URL for "Ports" crumb after bug/1416838
-        breadcrumb = [
-            ((port.network_name or port.network_id), port.network_url),
-            (_("Ports"), None)
-        ]
-        context["custom_breadcrumb"] = breadcrumb
         context["port"] = port
         context["url"] = self.get_redirect_url()
         context["actions"] = table.render_row_actions(port)
@@ -166,9 +71,15 @@ class DetailView(tabs.TabbedTableView):
         return reverse('horizon:project:networks:index')
 
 
-class UpdateView(workflows.WorkflowView):
-    workflow_class = project_workflows.UpdatePort
-    failure_url = "horizon:project:networks:detail"
+class UpdateView(forms.ModalFormView):
+    form_class = project_forms.UpdatePort
+    template_name = 'project/networks/ports/update.html'
+    context_object_name = 'port'
+    success_url = 'horizon:project:networks:detail'
+
+    def get_success_url(self):
+        return reverse(self.success_url,
+                       args=(self.kwargs['network_id'],))
 
     @memoized.memoized_method
     def _get_object(self, *args, **kwargs):
@@ -176,10 +87,17 @@ class UpdateView(workflows.WorkflowView):
         try:
             return api.neutron.port_get(self.request, port_id)
         except Exception:
-            redirect = reverse(self.failure_url,
+            redirect = reverse("horizon:project:networks:detail",
                                args=(self.kwargs['network_id'],))
             msg = _('Unable to retrieve port details')
             exceptions.handle(self.request, msg, redirect=redirect)
+
+    def get_context_data(self, **kwargs):
+        context = super(UpdateView, self).get_context_data(**kwargs)
+        port = self._get_object()
+        context['port_id'] = port['id']
+        context['network_id'] = port['network_id']
+        return context
 
     def get_initial(self):
         port = self._get_object()
@@ -188,16 +106,11 @@ class UpdateView(workflows.WorkflowView):
                    'tenant_id': port['tenant_id'],
                    'name': port['name'],
                    'admin_state': port['admin_state_up'],
-                   'mac_address': port['mac_address'],
-                   'target_tenant_id': port['tenant_id']}
-        if port.get('binding__vnic_type'):
-            initial['binding__vnic_type'] = port['binding__vnic_type']
+                   'device_id': port['device_id'],
+                   'device_owner': port['device_owner']}
         try:
             initial['mac_state'] = port['mac_learning_enabled']
         except Exception:
             # MAC Learning is not set
             pass
-        if 'port_security_enabled' in port:
-            initial['port_security_enabled'] = port['port_security_enabled']
-
         return initial

@@ -1,17 +1,3 @@
-/**
- * Licensed under the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License. You may obtain
- * a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations
- * under the License.
- */
-
 horizon.formset_table = (function () {
   'use strict';
 
@@ -38,7 +24,7 @@ horizon.formset_table = (function () {
   };
 
   // mark a row as deleted and hide it
-  module.delete_row = function () {
+  module.delete_row = function (e) {
     $(this).closest('tr').hide();
     $(this).prev('input[name$="-DELETE"]').attr('checked', true);
   };

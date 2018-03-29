@@ -15,49 +15,17 @@
 import json
 import os
 
-from django.conf import settings
 from django import http
 from django.utils.translation import ugettext_lazy as _
+from django.views import generic
 
 from horizon import exceptions
-from horizon import views
 
 
 ADD_TO_FIELD_HEADER = "HTTP_X_HORIZON_ADD_TO_FIELD"
 
 
-class ModalBackdropMixin(object):
-    """Mixin class to allow ModalFormView and WorkflowView together.
-
-    This mixin class is to be used for together with ModalFormView and
-    WorkflowView classes to augment them with modal_backdrop context data.
-
-    .. attribute: modal_backdrop (optional)
-
-        The appearance and behavior of backdrop under the modal element.
-        Possible options are:
-        * 'true' - show backdrop element outside the modal, close the modal
-        after clicking on backdrop (the default one);
-        * 'false' - do not show backdrop element, do not close the modal after
-        clicking outside of it;
-        * 'static' - show backdrop element outside the modal, do not close
-        the modal after clicking on backdrop.
-    """
-    modal_backdrop = 'static'
-
-    def __init__(self, *args, **kwargs):
-        super(ModalBackdropMixin, self).__init__(*args, **kwargs)
-        config = getattr(settings, 'HORIZON_CONFIG', {})
-        if 'modal_backdrop' in config:
-            self.modal_backdrop = config['modal_backdrop']
-
-    def get_context_data(self, **kwargs):
-        context = super(ModalBackdropMixin, self).get_context_data(**kwargs)
-        context['modal_backdrop'] = self.modal_backdrop
-        return context
-
-
-class ModalFormMixin(ModalBackdropMixin):
+class ModalFormMixin(object):
     def get_template_names(self):
         if self.request.is_ajax():
             if not hasattr(self, "ajax_template_name"):
@@ -79,11 +47,9 @@ class ModalFormMixin(ModalBackdropMixin):
         return context
 
 
-class ModalFormView(ModalFormMixin, views.HorizonFormView):
-    """The main view class for all views which handle forms in Horizon.
-
-    All view which handles forms in Horiozn should inherit this class.
-    It takes care of all details with processing
+class ModalFormView(ModalFormMixin, generic.FormView):
+    """The main view class from which all views which handle forms in Horizon
+    should inherit. It takes care of all details with processing
     :class:`~horizon.forms.base.SelfHandlingForm` classes, and modal concerns
     when the associated template inherits from
     `horizon/common/_modal_form.html`.
@@ -94,22 +60,6 @@ class ModalFormView(ModalFormMixin, views.HorizonFormView):
     See Django's documentation on the `FormView <https://docs.djangoproject.com
     /en/dev/ref/class-based-views/generic-editing/#formview>`_ class for
     more details.
-
-    .. attribute: modal_id (recommended)
-
-        The HTML element id of this modal.
-
-    .. attribute: modal_header (recommended)
-
-        The title of this modal.
-
-    .. attribute: form_id (recommended)
-
-        The HTML element id of the form in this modal.
-
-    .. attribute: submit_url (required)
-
-        The url for a submit action.
 
     .. attribute: submit_label (optional)
 
@@ -125,24 +75,15 @@ class ModalFormView(ModalFormMixin, views.HorizonFormView):
     .. attribute: cancel_url (optional)
 
         The url for a cancel action. This url defaults to the success_url
-        if omitted. Note that the cancel_url redirect is nullified when
+        if ommitted. Note that the cancel_url redirect is nullified when
         shown in a modal dialog.
     """
-
-    modal_id = None
-    modal_header = ""
-    form_id = None
-    submit_url = None
     submit_label = _("Submit")
     cancel_label = _("Cancel")
     cancel_url = None
 
     def get_context_data(self, **kwargs):
         context = super(ModalFormView, self).get_context_data(**kwargs)
-        context['modal_id'] = self.modal_id
-        context['modal_header'] = self.modal_header
-        context['form_id'] = self.form_id
-        context['submit_url'] = self.submit_url
         context['submit_label'] = self.submit_label
         context['cancel_label'] = self.cancel_label
         context['cancel_url'] = self.get_cancel_url()
@@ -152,33 +93,22 @@ class ModalFormView(ModalFormMixin, views.HorizonFormView):
         return self.cancel_url or self.success_url
 
     def get_object_id(self, obj):
-        """Returns the ID of the created object.
-
-        For  dynamic insertion of resources created in modals,
-        this method returns the id of the created object.
-        Defaults to returning the ``id`` attribute.
+        """For dynamic insertion of resources created in modals, this method
+        returns the id of the created object. Defaults to returning the ``id``
+        attribute.
         """
         return obj.id
 
     def get_object_display(self, obj):
-        """Returns the display name of the created object.
-
-        For dynamic insertion of resources created in modals,
-        this method returns the display name of the created object.
-        Defaults to returning the ``name`` attribute.
+        """For dynamic insertion of resources created in modals, this method
+        returns the display name of the created object. Defaults to returning
+        the ``name`` attribute.
         """
         return obj.name
 
-    def get_form(self, form_class=None):
+    def get_form(self, form_class):
         """Returns an instance of the form to be used in this view."""
-        if form_class is None:
-            form_class = self.get_form_class()
         return form_class(self.request, **self.get_form_kwargs())
-
-    def form_invalid(self, form):
-        context = self.get_context_data()
-        context['form'] = form
-        return self.render_to_response(context)
 
     def form_valid(self, form):
         try:
@@ -199,11 +129,6 @@ class ModalFormView(ModalFormMixin, views.HorizonFormView):
             else:
                 success_url = self.get_success_url()
                 response = http.HttpResponseRedirect(success_url)
-                if hasattr(handled, 'to_dict'):
-                    obj_dict = handled.to_dict()
-                    if 'upload_url' in obj_dict:
-                        response['X-File-Upload-URL'] = obj_dict['upload_url']
-                        response['X-Auth-Token'] = obj_dict['token_id']
                 # TODO(gabriel): This is not a long-term solution to how
                 # AJAX should be handled, but it's an expedient solution
                 # until the blueprint for AJAX handling is architected

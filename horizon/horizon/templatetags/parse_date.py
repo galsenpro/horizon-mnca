@@ -20,7 +20,7 @@
 Template tags for parsing date strings.
 """
 
-from datetime import datetime
+from datetime import datetime  # noqa
 
 from django import template
 from django.utils import timezone
@@ -31,7 +31,9 @@ register = template.Library()
 
 class ParseDateNode(template.Node):
     def render(self, datestring):
-        """Parses a date-like string into a timezone aware Python datetime."""
+        """Parses a date-like input string into a timezone aware Python
+        datetime.
+        """
         formats = ["%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%d %H:%M:%S.%f",
                    "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"]
         if datestring:

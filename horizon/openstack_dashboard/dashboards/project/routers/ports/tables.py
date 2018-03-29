@@ -15,10 +15,10 @@
 import logging
 
 from django.core.urlresolvers import reverse
-from django.utils.translation import pgettext_lazy
 from django.utils.translation import ugettext_lazy as _
 from django.utils.translation import ungettext_lazy
 
+from horizon import exceptions
 from horizon import tables
 from openstack_dashboard import api
 from openstack_dashboard.dashboards.project.networks.ports \
@@ -80,47 +80,31 @@ class RemoveInterface(policy.PolicyTargetMixin, tables.DeleteAction):
                 api.neutron.router_remove_interface(request,
                                                     router_id,
                                                     port_id=obj_id)
-        except Exception as e:
-            LOG.info('Failed to delete interface %(id)s: %(exc)s',
-                     {'id': obj_id, 'exc': e})
-            # NOTE: No exception handling is required here because
-            # BatchAction.handle() does it. What we need to do is
-            # just to re-raise the exception.
-            raise
-
-
-DISPLAY_CHOICES = (
-    ("UP", pgettext_lazy("Admin state of a Port", u"UP")),
-    ("DOWN", pgettext_lazy("Admin state of a Port", u"DOWN")),
-)
-STATUS_DISPLAY_CHOICES = (
-    ("ACTIVE", pgettext_lazy("current status of port", u"Active")),
-    ("BUILD", pgettext_lazy("current status of port", u"Build")),
-    ("DOWN", pgettext_lazy("current status of port", u"Down")),
-    ("ERROR", pgettext_lazy("current status of port", u"Error")),
-    ("N/A", pgettext_lazy("current status of port", u"N/A")),
-)
+        except Exception:
+            msg = _('Failed to delete interface %s') % obj_id
+            LOG.info(msg)
+            router_id = self.table.kwargs['router_id']
+            redirect = reverse(self.failure_url,
+                               args=[router_id])
+            exceptions.handle(request, msg, redirect=redirect)
 
 
 class PortsTable(tables.DataTable):
-    name = tables.Column("name_or_id",
+    name = tables.Column("name",
                          verbose_name=_("Name"),
                          link="horizon:project:networks:ports:detail")
     fixed_ips = tables.Column(project_tables.get_fixed_ips,
                               verbose_name=_("Fixed IPs"))
-    status = tables.Column("status",
-                           verbose_name=_("Status"),
-                           display_choices=STATUS_DISPLAY_CHOICES)
+    status = tables.Column("status", verbose_name=_("Status"))
     device_owner = tables.Column(get_device_owner,
                                  verbose_name=_("Type"))
     admin_state = tables.Column("admin_state",
-                                verbose_name=_("Admin State"),
-                                display_choices=DISPLAY_CHOICES)
+                                verbose_name=_("Admin State"))
 
     def get_object_display(self, port):
-        return port.name_or_id
+        return port.id
 
-    class Meta(object):
+    class Meta:
         name = "interfaces"
         verbose_name = _("Interfaces")
         table_actions = (AddInterface, RemoveInterface)

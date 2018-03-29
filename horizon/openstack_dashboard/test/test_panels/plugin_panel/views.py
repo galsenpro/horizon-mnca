@@ -10,19 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from horizon import views
+from django.views.generic import TemplateView  # noqa
 
 
-class IndexView(views.HorizonTemplateView):
+class IndexView(TemplateView):
     template_name = 'admin/plugin_panel/index.html'
-    page_title = 'Plugin-based Panel'
-
-
-class TestBannerView(views.HorizonTemplateView):
-    template_name = 'admin/plugin_panel/header.html'
-
-    def get_context_data(self, **kwargs):
-        context = super(TestBannerView, self).get_context_data(**kwargs)
-
-        context['message'] = "sample context"
-        return context

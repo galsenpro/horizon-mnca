@@ -23,13 +23,13 @@ from django.views import generic
 import six
 
 from horizon import exceptions
-from horizon.forms import views as hz_views
-from horizon.forms.views import ADD_TO_FIELD_HEADER
+from horizon.forms.views import ADD_TO_FIELD_HEADER  # noqa
 from horizon import messages
 
 
-class WorkflowView(hz_views.ModalBackdropMixin, generic.TemplateView):
-    """A generic view which handles the intricacies of workflow processing.
+class WorkflowView(generic.TemplateView):
+    """A generic class-based view which handles the intricacies of workflow
+    processing with minimal user configuration.
 
     .. attribute:: workflow_class
 
@@ -60,16 +60,13 @@ class WorkflowView(hz_views.ModalBackdropMixin, generic.TemplateView):
     step_errors = {}
 
     def __init__(self):
-        super(WorkflowView, self).__init__()
         if not self.workflow_class:
             raise AttributeError("You must set the workflow_class attribute "
                                  "on %s." % self.__class__.__name__)
 
     def get_initial(self):
-        """Returns initial data for the workflow.
-
-        Defaults to using the GET parameters
-        to allow pre-seeding of the workflow context values.
+        """Returns initial data for the workflow. Defaults to using the GET
+        parameters to allow pre-seeding of the workflow context values.
         """
         return copy.copy(self.request.GET)
 
@@ -90,9 +87,8 @@ class WorkflowView(hz_views.ModalBackdropMixin, generic.TemplateView):
         """
         context = super(WorkflowView, self).get_context_data(**kwargs)
         workflow = self.get_workflow()
-        workflow.verify_integrity()
         context[self.context_object_name] = workflow
-        next = self.request.GET.get(workflow.redirect_param_name)
+        next = self.request.REQUEST.get(workflow.redirect_param_name, None)
         context['REDIRECT_URL'] = next
         context['layout'] = self.get_layout()
         # For consistency with Workflow class
@@ -103,13 +99,13 @@ class WorkflowView(hz_views.ModalBackdropMixin, generic.TemplateView):
         return context
 
     def get_layout(self):
-        """Returns classes for the workflow element in template.
-
-        The returned classes are determied based on
-        the workflow characteristics.
+        """returns classes for the workflow element in template based on
+        the workflow characteristics
         """
         if self.request.is_ajax():
             layout = ['modal', ]
+            if self.workflow_class.fullscreen:
+                layout += ['fullscreen', ]
         else:
             layout = ['static_page', ]
 
@@ -143,10 +139,7 @@ class WorkflowView(hz_views.ModalBackdropMixin, generic.TemplateView):
 
     def get(self, request, *args, **kwargs):
         """Handler for HTTP GET requests."""
-        try:
-            context = self.get_context_data(**kwargs)
-        except exceptions.NotAvailable:
-            exceptions.handle(request)
+        context = self.get_context_data(**kwargs)
         self.set_workflow_step_errors(context)
         return self.render_to_response(context)
 
@@ -159,8 +152,8 @@ class WorkflowView(hz_views.ModalBackdropMixin, generic.TemplateView):
         for step in workflow.steps[start:end + 1]:
             if not step.action.is_valid():
                 errors[step.slug] = dict(
-                    (field, [six.text_type(error) for error in errors])
-                    for (field, errors) in step.action.errors.items())
+                    (field, [unicode(error) for error in errors])
+                    for (field, errors) in six.iteritems(step.action.errors))
         return {
             'has_errors': bool(errors),
             'workflow_slug': workflow.slug,
@@ -208,12 +201,10 @@ class WorkflowView(hz_views.ModalBackdropMixin, generic.TemplateView):
             messages.error(request, msg)
         if "HTTP_X_HORIZON_ADD_TO_FIELD" in self.request.META:
             field_id = self.request.META["HTTP_X_HORIZON_ADD_TO_FIELD"]
-            response = http.HttpResponse()
-            if workflow.object:
-                data = [self.get_object_id(workflow.object),
-                        self.get_object_display(workflow.object)]
-                response.content = json.dumps(data)
-                response["X-Horizon-Add-To-Field"] = field_id
+            data = [self.get_object_id(workflow.object),
+                    self.get_object_display(workflow.object)]
+            response = http.HttpResponse(json.dumps(data))
+            response["X-Horizon-Add-To-Field"] = field_id
             return response
-        next_url = self.request.POST.get(workflow.redirect_param_name)
+        next_url = self.request.REQUEST.get(workflow.redirect_param_name, None)
         return shortcuts.redirect(next_url or workflow.get_success_url())

@@ -10,45 +10,24 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+from django.core.exceptions import ValidationError  # noqa
 from django.core.urlresolvers import reverse
-from django.template import defaultfilters as filters
 from django.utils.http import urlencode
 from django.utils.translation import ugettext_lazy as _
 from django.utils.translation import ungettext_lazy
 
+from horizon import exceptions
 from horizon import forms
 from horizon import tables
+from keystoneclient.exceptions import Conflict  # noqa
 
 from openstack_dashboard import api
 from openstack_dashboard import policy
-from openstack_dashboard.usage import quotas
-
-
-class RescopeTokenToProject(tables.LinkAction):
-    name = "rescope"
-    verbose_name = _("Set as Active Project")
-    url = "switch_tenants"
-
-    def allowed(self, request, project):
-        # allow rescoping token to any project the user has a role on,
-        # authorized_tenants, and that they are not currently scoped to
-        return next((True for proj in request.user.authorized_tenants
-                     if proj.id == project.id and
-                     project.id != request.user.project_id and
-                     project.enabled), False)
-
-    def get_link_url(self, project):
-        # redirects to the switch_tenants url which then will redirect
-        # back to this page
-        dash_url = reverse("horizon:identity:projects:index")
-        base_url = reverse(self.url, args=[project.id])
-        param = urlencode({"next": dash_url})
-        return "?".join([base_url, param])
 
 
 class UpdateMembersLink(tables.LinkAction):
     name = "users"
-    verbose_name = _("Manage Members")
+    verbose_name = _("Modify Users")
     url = "horizon:identity:projects:update"
     classes = ("ajax-modal",)
     icon = "pencil"
@@ -61,14 +40,6 @@ class UpdateMembersLink(tables.LinkAction):
         param = urlencode({"step": step})
         return "?".join([base_url, param])
 
-    def allowed(self, request, project):
-        if api.keystone.is_multi_domain_enabled():
-            # domain admin or cloud admin = True
-            # project admin or member = False
-            return api.keystone.is_domain_admin(request)
-        else:
-            return super(UpdateMembersLink, self).allowed(request, project)
-
 
 class UpdateGroupsLink(tables.LinkAction):
     name = "groups"
@@ -79,12 +50,7 @@ class UpdateGroupsLink(tables.LinkAction):
     policy_rules = (("identity", "identity:list_groups"),)
 
     def allowed(self, request, project):
-        if api.keystone.is_multi_domain_enabled():
-            # domain admin or cloud admin = True
-            # project admin or member = False
-            return api.keystone.is_domain_admin(request)
-        else:
-            return super(UpdateGroupsLink, self).allowed(request, project)
+        return api.keystone.VERSIONS.active >= 3
 
     def get_link_url(self, project):
         step = 'update_group_members'
@@ -98,11 +64,10 @@ class UsageLink(tables.LinkAction):
     verbose_name = _("View Usage")
     url = "horizon:identity:projects:usage"
     icon = "stats"
-    policy_rules = (("compute", "os_compute_api:os-simple-tenant-usage:show"),)
+    policy_rules = (("compute", "compute_extension:simple_tenant_usage:show"),)
 
     def allowed(self, request, project):
-        return (request.user.is_superuser and
-                api.base.is_service_enabled(request, 'compute'))
+        return request.user.is_superuser
 
 
 class CreateProject(tables.LinkAction):
@@ -114,30 +79,19 @@ class CreateProject(tables.LinkAction):
     policy_rules = (('identity', 'identity:create_project'),)
 
     def allowed(self, request, project):
-        if api.keystone.is_multi_domain_enabled():
-            # domain admin or cloud admin = True
-            # project admin or member = False
-            return api.keystone.is_domain_admin(request)
-        else:
-            return api.keystone.keystone_can_edit_project()
+        return api.keystone.keystone_can_edit_project()
 
 
-class UpdateProject(policy.PolicyTargetMixin, tables.LinkAction):
+class UpdateProject(tables.LinkAction):
     name = "update"
     verbose_name = _("Edit Project")
     url = "horizon:identity:projects:update"
     classes = ("ajax-modal",)
     icon = "pencil"
     policy_rules = (('identity', 'identity:update_project'),)
-    policy_target_attrs = (("target.project.domain_id", "domain_id"),)
 
     def allowed(self, request, project):
-        if api.keystone.is_multi_domain_enabled():
-            # domain admin or cloud admin = True
-            # project admin or member = False
-            return api.keystone.is_domain_admin(request)
-        else:
-            return api.keystone.keystone_can_edit_project()
+        return api.keystone.keystone_can_edit_project()
 
 
 class ModifyQuotas(tables.LinkAction):
@@ -146,14 +100,7 @@ class ModifyQuotas(tables.LinkAction):
     url = "horizon:identity:projects:update"
     classes = ("ajax-modal",)
     icon = "pencil"
-    policy_rules = (('compute', "os_compute_api:os-quota-sets:update"),)
-
-    def allowed(self, request, datum):
-        if api.keystone.VERSIONS.active < 3:
-            return True
-        else:
-            return (api.keystone.is_cloud_admin(request) and
-                    quotas.enabled_quotas(request))
+    policy_rules = (('compute', "compute_extension:quotas:update"),)
 
     def get_link_url(self, project):
         step = 'update_quotas'
@@ -162,7 +109,7 @@ class ModifyQuotas(tables.LinkAction):
         return "?".join([base_url, param])
 
 
-class DeleteTenantsAction(policy.PolicyTargetMixin, tables.DeleteAction):
+class DeleteTenantsAction(tables.DeleteAction):
     @staticmethod
     def action_present(count):
         return ungettext_lazy(
@@ -180,31 +127,26 @@ class DeleteTenantsAction(policy.PolicyTargetMixin, tables.DeleteAction):
         )
 
     policy_rules = (("identity", "identity:delete_project"),)
-    policy_target_attrs = ("target.project.domain_id", "domain_id"),
 
     def allowed(self, request, project):
-        if api.keystone.is_multi_domain_enabled() \
-                and not api.keystone.is_domain_admin(request):
-            return False
         return api.keystone.keystone_can_edit_project()
 
     def delete(self, request, obj_id):
         api.keystone.tenant_delete(request, obj_id)
 
-    def handle(self, table, request, obj_ids):
-        response = \
-            super(DeleteTenantsAction, self).handle(table, request, obj_ids)
-        return response
-
 
 class TenantFilterAction(tables.FilterAction):
-    if api.keystone.VERSIONS.active < 3:
-        filter_type = "query"
-    else:
-        filter_type = "server"
-        filter_choices = (('name', _("Project Name ="), True),
-                          ('id', _("Project ID ="), True),
-                          ('enabled', _("Enabled ="), True, _('e.g. Yes/No')))
+    def filter(self, table, tenants, filter_string):
+        """Really naive case-insensitive search."""
+        # FIXME(gabriel): This should be smarter. Written for demo purposes.
+        q = filter_string.lower()
+
+        def comp(tenant):
+            if q in tenant.name.lower():
+                return True
+            return False
+
+        return filter(comp, tenants)
 
 
 class UpdateRow(tables.Row):
@@ -216,51 +158,60 @@ class UpdateRow(tables.Row):
         return project_info
 
 
+class UpdateCell(tables.UpdateAction):
+    def allowed(self, request, project, cell):
+        return api.keystone.keystone_can_edit_project() and \
+            policy.check((("identity", "identity:update_project"),),
+                         request)
+
+    def update_cell(self, request, datum, project_id,
+                    cell_name, new_cell_value):
+        # inline update project info
+        try:
+            project_obj = datum
+            # updating changed value by new value
+            setattr(project_obj, cell_name, new_cell_value)
+            api.keystone.tenant_update(
+                request,
+                project_id,
+                name=project_obj.name,
+                description=project_obj.description,
+                enabled=project_obj.enabled)
+
+        except Conflict:
+            # Returning a nice error message about name conflict. The message
+            # from exception is not that clear for the users.
+            message = _("This name is already taken.")
+            raise ValidationError(message)
+        except Exception:
+            exceptions.handle(request, ignore=True)
+            return False
+        return True
+
+
 class TenantsTable(tables.DataTable):
-    name = tables.WrappingColumn('name', verbose_name=_('Name'),
-                                 link=("horizon:identity:projects:detail"),
-                                 form_field=forms.CharField(max_length=64))
+    name = tables.Column('name', verbose_name=_('Name'),
+                         form_field=forms.CharField(max_length=64),
+                         update_action=UpdateCell)
     description = tables.Column(lambda obj: getattr(obj, 'description', None),
                                 verbose_name=_('Description'),
                                 form_field=forms.CharField(
                                     widget=forms.Textarea(attrs={'rows': 4}),
-                                    required=False))
+                                    required=False),
+                                update_action=UpdateCell)
     id = tables.Column('id', verbose_name=_('Project ID'))
-
-    if api.keystone.VERSIONS.active >= 3:
-        domain_name = tables.Column(
-            'domain_name', verbose_name=_('Domain Name'))
-
     enabled = tables.Column('enabled', verbose_name=_('Enabled'), status=True,
-                            filters=(filters.yesno, filters.capfirst),
                             form_field=forms.BooleanField(
                                 label=_('Enabled'),
-                                required=False))
+                                required=False),
+                            update_action=UpdateCell)
 
-    def get_project_detail_link(self, project):
-        # this method is an ugly monkey patch, needed because
-        # the column link method does not provide access to the request
-        if policy.check((("identity", "identity:get_project"),),
-                        self.request, target={"project": project}):
-            return reverse("horizon:identity:projects:detail",
-                           args=(project.id,))
-        return None
-
-    def __init__(self, request, data=None, needs_form_wrapper=None, **kwargs):
-        super(TenantsTable,
-              self).__init__(request, data=data,
-                             needs_form_wrapper=needs_form_wrapper,
-                             **kwargs)
-        # see the comment above about ugly monkey patches
-        self.columns['name'].get_link_url = self.get_project_detail_link
-
-    class Meta(object):
+    class Meta:
         name = "tenants"
         verbose_name = _("Projects")
         row_class = UpdateRow
         row_actions = (UpdateMembersLink, UpdateGroupsLink, UpdateProject,
-                       UsageLink, ModifyQuotas, DeleteTenantsAction,
-                       RescopeTokenToProject)
+                       UsageLink, ModifyQuotas, DeleteTenantsAction)
         table_actions = (TenantFilterAction, CreateProject,
                          DeleteTenantsAction)
         pagination_param = "tenant_marker"

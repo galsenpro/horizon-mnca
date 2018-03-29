@@ -19,6 +19,7 @@ from django.template import defaultfilters as filters
 from django.utils.translation import ugettext_lazy as _
 from django.utils.translation import ungettext_lazy
 
+from horizon import exceptions
 from horizon import tables
 from horizon.utils import filters as utils_filters
 
@@ -49,15 +50,22 @@ class DeleteDHCPAgent(tables.DeleteAction):
 
     def delete(self, request, obj_id):
         network_id = self.table.kwargs['network_id']
-        api.neutron.remove_network_from_dhcp_agent(request, obj_id, network_id)
+        try:
+            api.neutron.remove_network_from_dhcp_agent(request, obj_id,
+                                                       network_id)
+        except Exception as e:
+            msg = _('Failed to delete agent: %s') % e
+            LOG.info(msg)
+            redirect = reverse('horizon:admin:networks:detail',
+                               args=[network_id])
+            exceptions.handle(request, msg, redirect=redirect)
 
 
 class AddDHCPAgent(tables.LinkAction):
     name = "add"
     verbose_name = _("Add DHCP Agent")
     url = "horizon:admin:networks:adddhcpagent"
-    classes = ("ajax-modal",)
-    icon = "plus"
+    classes = ("ajax-modal", "btn-create")
     policy_rules = (("network", "update_agent"),)
 
     def get_link_url(self, datum=None):
@@ -77,10 +85,6 @@ def get_agent_state(agent):
     return _('Down')
 
 
-class DHCPAgentsFilterAction(tables.FilterAction):
-    name = "agents"
-
-
 class DHCPAgentsTable(tables.DataTable):
     id = tables.Column('id', verbose_name=_('ID'), hidden=True)
     host = tables.Column('host', verbose_name=_('Host'))
@@ -91,13 +95,8 @@ class DHCPAgentsTable(tables.DataTable):
                                         filters=(utils_filters.parse_isotime,
                                                  filters.timesince))
 
-    def get_object_display(self, agent):
-        return agent.host
-
-    class Meta(object):
+    class Meta:
         name = "agents"
         verbose_name = _("DHCP Agents")
-        table_actions = (AddDHCPAgent, DeleteDHCPAgent,
-                         DHCPAgentsFilterAction,)
+        table_actions = (AddDHCPAgent, DeleteDHCPAgent)
         row_actions = (DeleteDHCPAgent,)
-        hidden_title = False

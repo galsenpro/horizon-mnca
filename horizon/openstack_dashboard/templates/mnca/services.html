@@ -1,0 +1,124 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% block title %}{{ panel_name|title }}{% endblock %}
+
+{% block page_header %}
+{% endblock page_header %}
+
+{% block main %}
+Welcome to panel {{ panel_name }}
+
+
+ <div class="row">
+                <div class="table_actions clearfix">
+                    <div class="table_search">
+                    <a id="tenants__action_create" class="btn data-table-action btn-default ajax-modal" href="#" title="Créer un service"  data-toggle="modal" data-target="#myModalHorizontal">
+                        <span class="fa fa-plus"></span> Add service</a>
+                </div>
+<!-- Modal -->
+<div class="modal fade" id="myModalHorizontal" tabindex="-1" role="dialog"
+     aria-labelledby="myModalLabel" aria-hidden="true" >
+    <div class="modal-dialog" style="width:50%">
+        <div class="modal-content">
+            <!-- Modal Header -->
+            <div class="modal-header">
+                <button type="button" class="close"
+                        data-dismiss="modal">
+                    <span aria-hidden="true">&times;</span>
+                    <span class="sr-only">Close</span>
+                </button>
+                <h4 class="modal-title" id="myModalLabel">
+                    Nouveau service IDAS
+                </h4>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="modal-body">
+
+               <div class="form-group">
+                    <div id="container">
+		    </div>
+                </div>
+
+      <p>
+          <form class="form-horizontal" id="myformservice" name="box">
+                    <input type="hidden" id="myconfig" name="myconfig"
+                        required="required" class="form-control">
+                    <button type="submit" class="btn btn-primary"
+                        onclick="if (bf.validate()) {alert(&#39;New Service &#39;)}">Post
+                        Service</button>
+                </form>
+      </p>
+      <br>
+       <p>
+       * <span class="alert alert-danger bs-alert-old-docs">Required</span>
+    </p>
+
+
+
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default"
+                        data-dismiss="modal">
+                    Close
+                </button>
+                <button type="button" class="btn btn-primary">
+                    Save changes
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+</div>
+            <div class="row">
+                    <!--div class="table-responsive"-->
+                        <table id="grid"  class="table table-condensed table-hover table-striped" data-selection="true" data-multi-select="true" data-row-select="true" data-keep-selection="true">
+                            <thead>
+                                <tr>
+                                    {% for ith in  listeentete %}
+                                    <th data-column-id={{ ith.0 }} data-order="asc" data-visible={{ ith.2}} data-align="center" data-header-align="center" data-width="auto">{{ ith.0 }}</th>
+                                    {% endfor %}
+                                    <th data-column-id="link" data-sortable="false" data-visible="false"  data-width="auto">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                    {% for sublistserv in result %}
+                                    <tr>
+                                        {% for serv in sublistserv %}
+                                                <td> <a href="#">{{ serv.1}}</a>  </td>
+                                        {% endfor %}
+					<td>
+                                                    <div class="btn-group">
+                                                        <a id="idTenant" class="btn data-table-action btn-default btn-sm ajax-modal" href="#"> Gestion services</a>
+                                                        <a class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown" href="#">
+                                                            <span class="fa fa-caret-down"></span>
+                                                        </a>
+                                                        <ul class="dropdown-menu dropdown-menu-right row_actions">
+                                                            <li>
+                                                                <a id="dffd" class="btn data-table-action ajax-modal" href="#"> Editer le Service</a>
+                                                            </li>
+                                                            <li>
+                                                                <a id="dfd" class="btn data-table-action " href="#"> Devices</a>
+                                                            </li>
+                                                            <li>
+                                                                <a id="dfdf" class="btn data-table-action ajax-modal" href="#"> Détails du service</a>
+                                                            </li>
+                                                            <li>
+                                                                <button data-batch-action="true" id="tenants__row_4947c63d182e467daaf50986d4f34936__action_delete" class="data-table-action btn-danger btn" name="action" help_text="Cette action ne peut pas être annulée." type="submit" value="tenants__delete__XXXX"> Supprimer le service</button>
+                                                            </li>
+                                                        </ul></div></td>
+                                    </tr>
+                               {% endfor %}
+                            </tbody>
+                        </table>
+            </div>
+
+    <script type="text/javascript">
+        $(document).ready(function(){
+            $("#myModal").modal('show');
+        });
+    </script>
+{% endblock %}

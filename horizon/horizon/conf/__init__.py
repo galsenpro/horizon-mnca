@@ -12,15 +12,14 @@
 
 import copy
 
-from django.utils.functional import empty
-from django.utils.functional import LazyObject
-from django.utils.functional import SimpleLazyObject
+from django.utils.functional import empty  # noqa
+from django.utils.functional import LazyObject  # noqa
 
 
 class LazySettings(LazyObject):
     def _setup(self, name=None):
         from django.conf import settings
-        from horizon.conf.default import HORIZON_CONFIG as DEFAULT_CONFIG
+        from horizon.conf.default import HORIZON_CONFIG as DEFAULT_CONFIG  # noqa
         HORIZON_CONFIG = copy.copy(DEFAULT_CONFIG)
         HORIZON_CONFIG.update(settings.HORIZON_CONFIG)
 
@@ -45,11 +44,4 @@ class LazySettings(LazyObject):
             self._setup(name)
         return self._wrapped.get(name, fallback)
 
-
-def get_webroot():
-    from django.conf import settings
-    return settings.WEBROOT
-
-
 HORIZON_CONFIG = LazySettings()
-WEBROOT = SimpleLazyObject(get_webroot)

@@ -16,12 +16,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+
+from django.conf.urls import patterns
 from django.conf.urls import url
 
 from openstack_dashboard.dashboards.project.overview import views
 
 
-urlpatterns = [
+urlpatterns = patterns(
+    'openstack_dashboard.dashboards.project.overview.views',
     url(r'^$', views.ProjectOverview.as_view(), name='index'),
     url(r'^warning$', views.WarningView.as_view(), name='warning'),
-]
+)

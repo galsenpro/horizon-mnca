@@ -12,7 +12,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from django.conf import settings
 from django.core.urlresolvers import reverse
 from django.core.urlresolvers import reverse_lazy
 from django.utils.translation import ugettext_lazy as _
@@ -34,31 +33,14 @@ from openstack_dashboard.dashboards.identity.roles \
 
 class IndexView(tables.DataTableView):
     table_class = project_tables.RolesTable
-    page_title = _("Roles")
-
-    def needs_filter_first(self, table):
-        return self._needs_filter_first
+    template_name = 'identity/roles/index.html'
 
     def get_data(self):
         roles = []
-        filters = self.get_filters()
-
-        self._needs_filter_first = False
-
         if policy.check((("identity", "identity:list_roles"),),
                         self.request):
-
-            # If filter_first is set and if there are not other filters
-            # selected, then search criteria must be provided
-            # and return an empty list
-            filter_first = getattr(settings, 'FILTER_DATA_FIRST', {})
-            if filter_first.get('identity.roles', False) and len(filters) == 0:
-                self._needs_filter_first = True
-                return roles
-
             try:
-                roles = api.keystone.role_list(self.request,
-                                               filters=filters)
+                roles = api.keystone.role_list(self.request)
             except Exception:
                 exceptions.handle(self.request,
                                   _('Unable to retrieve roles list.'))
@@ -69,13 +51,9 @@ class IndexView(tables.DataTableView):
 
 
 class UpdateView(forms.ModalFormView):
-    template_name = 'identity/roles/update.html'
-    form_id = "update_role_form"
     form_class = project_forms.UpdateRoleForm
-    submit_label = _("Update Role")
-    submit_url = "horizon:identity:roles:update"
+    template_name = 'identity/roles/update.html'
     success_url = reverse_lazy('horizon:identity:roles:index')
-    page_title = _("Update Role")
 
     @memoized.memoized_method
     def get_object(self):
@@ -89,8 +67,7 @@ class UpdateView(forms.ModalFormView):
 
     def get_context_data(self, **kwargs):
         context = super(UpdateView, self).get_context_data(**kwargs)
-        args = (self.get_object().id,)
-        context['submit_url'] = reverse(self.submit_url, args=args)
+        context['role'] = self.get_object()
         return context
 
     def get_initial(self):
@@ -100,10 +77,6 @@ class UpdateView(forms.ModalFormView):
 
 
 class CreateView(forms.ModalFormView):
-    template_name = 'identity/roles/create.html'
-    form_id = "create_role_form"
     form_class = project_forms.CreateRoleForm
-    submit_label = _("Create Role")
-    submit_url = reverse_lazy("horizon:identity:roles:create")
+    template_name = 'identity/roles/create.html'
     success_url = reverse_lazy('horizon:identity:roles:index')
-    page_title = _("Create Role")

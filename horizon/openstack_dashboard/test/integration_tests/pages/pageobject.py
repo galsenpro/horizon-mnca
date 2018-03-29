@@ -10,85 +10,71 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import six.moves.urllib.parse as urlparse
+# TODO(dkorn): add handle_popup method
 
-from openstack_dashboard.test.integration_tests import basewebobject
+import selenium.common.exceptions as Exceptions
+import selenium.webdriver.support.ui as Support
 
 
-class PageObject(basewebobject.BaseWebObject):
+class PageObject(object):
     """Base class for page objects."""
-
-    PARTIAL_LOGIN_URL = 'auth/login'
-
     def __init__(self, driver, conf):
         """Constructor."""
-        super(PageObject, self).__init__(driver, conf)
+        self.driver = driver
+        self.conf = conf
+        self.login_url = self.conf.dashboard.login_url
         self._page_title = None
 
     @property
     def page_title(self):
         return self.driver.title
 
-    def is_the_current_page(self, do_assert=False):
-        found_expected_title = self.page_title.startswith(self._page_title)
-        if do_assert:
-            self.assertTrue(
-                found_expected_title,
+    def is_the_current_page(self):
+        if self._page_title not in self.page_title:
+            raise AssertionError(
                 "Expected to find %s in page title, instead found: %s"
                 % (self._page_title, self.page_title))
-        return found_expected_title
-
-    @property
-    def login_url(self):
-        base_url = self.conf.dashboard.dashboard_url
-        if not base_url.endswith('/'):
-            base_url += '/'
-        return urlparse.urljoin(base_url, self.PARTIAL_LOGIN_URL)
+        return True
 
     def get_url_current_page(self):
-        return self.driver.current_url
+        return self.driver.current_url()
 
     def close_window(self):
         return self.driver.close()
 
-    def is_nth_window_opened(self, n):
-        return len(self.driver.window_handles) == n
-
-    def switch_window(self, window_name=None, window_index=None):
-        """Switches focus between the webdriver windows.
-
-        Args:
-        - window_name: The name of the window to switch to.
-        - window_index: The index of the window handle to switch to.
-        If the method is called without arguments it switches to the
-         last window in the driver window_handles list.
-        In case only one window exists nothing effectively happens.
-        Usage:
-        page.switch_window('_new')
-        page.switch_window(2)
-        page.switch_window()
-        """
-
-        if window_name is not None and window_index is not None:
-            raise ValueError("switch_window receives the window's name or "
-                             "the window's index, not both.")
-        if window_name is not None:
-            self.driver.switch_to.window(window_name)
-        elif window_index is not None:
-            self.driver.switch_to.window(
-                self.driver.window_handles[window_index])
-        else:
-            self.driver.switch_to.window(self.driver.window_handles[-1])
-
-    def go_to_previous_page(self):
-        self.driver.back()
-
-    def go_to_next_page(self):
-        self.driver.forward()
-
-    def refresh_page(self):
-        self.driver.refresh()
-
     def go_to_login_page(self):
         self.driver.get(self.login_url)
-        self.is_the_current_page(do_assert=True)
+        self.is_the_current_page()
+
+    def is_element_present(self, *locator):
+        try:
+            self.driver.find_element(*locator)
+            return True
+        except Exceptions.NoSuchElementException:
+            return False
+
+    def is_element_visible(self, *locator):
+        try:
+            return self.driver.find_element(*locator).is_displayed()
+        except (Exceptions.NoSuchElementException,
+                Exceptions.ElementNotVisibleException):
+            return False
+
+    def return_to_previous_page(self):
+        self.driver.back()
+
+    def get_element(self, *locator):
+        return self.driver.find_element(*locator)
+
+    def fill_field_element(self, data, field_element):
+        field_element.clear()
+        field_element.send_keys(data)
+        return field_element
+
+    def select_dropdown(self, value, element):
+        select = Support.Select(element)
+        select.select_by_visible_text(value)
+
+    def select_dropdown_by_value(self, value, element):
+        select = Support.Select(element)
+        select.select_by_value(value)

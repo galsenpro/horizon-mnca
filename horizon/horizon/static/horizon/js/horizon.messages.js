@@ -1,19 +1,5 @@
-/**
- * Licensed under the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License. You may obtain
- * a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations
- * under the License.
- */
-
 horizon.alert = function (type, message, extra_tags) {
-  var safe = false;
+  safe = false;
   // Check if the message is tagged as safe.
   if (typeof(extra_tags) !== "undefined" && $.inArray('safe', extra_tags.split(' ')) !== -1) {
     safe = true;
@@ -34,14 +20,12 @@ horizon.alert = function (type, message, extra_tags) {
 
   var template = horizon.templates.compiled_templates["#alert_message_template"],
     params = {
-      "type": type || 'default',
+      "type": type,
       "type_display": type_display,
       "message": message,
       "safe": safe
     };
-  var this_alert = $(template.render(params)).hide().prependTo("#main_content .messages").fadeIn(100);
-  horizon.autoDismissAlert(this_alert);
-  return this_alert;
+  return $(template.render(params)).hide().prependTo("#main_content .messages").fadeIn(100);
 };
 
 horizon.clearErrorMessages = function() {
@@ -57,26 +41,27 @@ horizon.clearAllMessages = function() {
   horizon.clearSuccessMessages();
 };
 
-horizon.autoDismissAlert = function ($alert) {
-  // If autofade isn't configured, don't do anything
-  if (typeof(horizon.conf.auto_fade_alerts) === "undefined")
-      return;
+horizon.autoDismissAlerts = function() {
+  var $alerts = $('#main_content .messages .alert');
 
-  var types = $alert.attr('class').split(' '),
-    intersection = $.grep(types, function (value) {
-      return $.inArray(value, horizon.conf.auto_fade_alerts.types) !== -1;
-    });
-  // Check if alert should auto-fade
-  if (intersection.length > 0) {
-    setTimeout(function() {
-      $alert.fadeOut(horizon.conf.auto_fade_alerts.fade_duration);
-    }, horizon.conf.auto_fade_alerts.delay);
-  }
+  $alerts.each(function(index, alert) {
+    var $alert = $(this),
+      types = $alert.attr('class').split(' '),
+      intersection = $.grep(types, function (value) {
+        return $.inArray(value, horizon.conf.auto_fade_alerts.types) !== -1;
+      });
+    // Check if alert should auto-fade
+    if (intersection.length > 0) {
+      setTimeout(function() {
+        $alert.fadeOut(horizon.conf.auto_fade_alerts.fade_duration);
+      }, horizon.conf.auto_fade_alerts.delay);
+    }
+  });
 };
 
 horizon.addInitFunction(function () {
   // Bind AJAX message handling.
-  $(document).ajaxComplete(function(event, request){
+  $(document).ajaxComplete(function(event, request, settings){
     var message_array = $.parseJSON(horizon.ajax.get_messages(request));
     $(message_array).each(function (index, item) {
       horizon.alert(item[0], item[1], item[2]);
@@ -91,7 +76,6 @@ horizon.addInitFunction(function () {
   // Bind dismiss(x) handlers for alert messages.
   $(".alert").alert();
 
-  $('#main_content .messages .alert').each(function() {
-    horizon.autoDismissAlert($(this));
-  });
+  // Hide alerts automatically if attribute data-dismiss-auto is set to true.
+  horizon.autoDismissAlerts();
 });

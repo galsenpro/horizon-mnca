@@ -13,18 +13,18 @@
 #    under the License.
 
 from collections import defaultdict
-from collections import OrderedDict
-import copy
-import functools
 import logging
 import types
+import warnings
 
 from django.conf import settings
 from django.core import urlresolvers
 from django import shortcuts
-from django.template.loader import render_to_string
-from django.utils.functional import Promise
-from django.utils.http import urlencode
+from django.template.loader import render_to_string  # noqa
+from django.utils.datastructures import SortedDict
+from django.utils.functional import Promise  # noqa
+from django.utils.http import urlencode  # noqa
+from django.utils.translation import pgettext_lazy
 from django.utils.translation import ugettext_lazy as _
 from django.utils.translation import ungettext_lazy
 import six
@@ -33,19 +33,18 @@ from horizon import exceptions
 from horizon import messages
 from horizon.utils import functions
 from horizon.utils import html
-from horizon.utils import settings as utils_settings
 
 
 LOG = logging.getLogger(__name__)
 
 # For Bootstrap integration; can be overridden in settings.
-ACTION_CSS_CLASSES = ()
+ACTION_CSS_CLASSES = ("btn", "btn-default", "btn-sm")
 STRING_SEPARATOR = "__"
 
 
 class BaseActionMetaClass(type):
-    """Metaclass for adding all actions options from inheritance tree to action.
-
+    """Metaclass for adding all actions options from inheritance tree
+    to action.
     This way actions can inherit from each other but still use
     the class attributes DSL. Meaning, all attributes of Actions are
     defined as class attributes, but in the background, it will be used as
@@ -53,7 +52,7 @@ class BaseActionMetaClass(type):
     initialized clean way. Similar principle is used in DataTableMetaclass.
     """
     def __new__(mcs, name, bases, attrs):
-        # Options of action are set as class attributes, loading them.
+        # Options of action are set ass class attributes, loading them.
         options = {}
         if attrs:
             options = attrs
@@ -97,11 +96,9 @@ class BaseAction(html.HTMLElement):
         self.requires_input = kwargs.get('requires_input', False)
         self.preempt = kwargs.get('preempt', False)
         self.policy_rules = kwargs.get('policy_rules', None)
-        self.action_type = kwargs.get('action_type', 'default')
 
     def data_type_matched(self, datum):
         """Method to see if the action is allowed for a certain type of data.
-
         Only affects mixed data type tables.
         """
         if datum:
@@ -131,7 +128,7 @@ class BaseAction(html.HTMLElement):
         return True
 
     def _allowed(self, request, datum):
-        policy_check = utils_settings.import_setting("POLICY_CHECK_FUNCTION")
+        policy_check = getattr(settings, "POLICY_CHECK_FUNCTION", None)
 
         if policy_check and self.policy_rules:
             target = self.get_policy_target(request, datum)
@@ -151,15 +148,13 @@ class BaseAction(html.HTMLElement):
         pass
 
     def get_default_classes(self):
-        """Returns a list of the default classes for the action.
-
-        Defaults to ``["btn", "btn-default", "btn-sm"]``.
+        """Returns a list of the default classes for the action. Defaults to
+        ``["btn", "btn-default", "btn-sm"]``.
         """
         return getattr(settings, "ACTION_CSS_CLASSES", ACTION_CSS_CLASSES)
 
     def get_default_attrs(self):
         """Returns a list of the default HTML attributes for the action.
-
         Defaults to returning an ``id`` attribute with the value
         ``{{ table.name }}__action_{{ action.name }}__{{ creation counter }}``.
         """
@@ -230,10 +225,8 @@ class Action(BaseAction):
         list of scope and rule tuples to do policy checks on, the
         composition of which is (scope, rule)
 
-        * scope: service type managing the policy for action
-        * rule: string representing the action to be checked
-
-        .. code-block:: python
+            scope: service type managing the policy for action
+            rule: string representing the action to be checked
 
             for a policy that requires a single rule check:
                 policy_rules should look like
@@ -359,7 +352,6 @@ class LinkAction(BaseAction):
         self.allowed_data_types = kwargs.get('allowed_data_types', [])
         self.icon = kwargs.get('icon', None)
         self.kwargs = kwargs
-        self.action_type = kwargs.get('action_type', 'default')
 
         if not kwargs.get('verbose_name', None):
             raise NotImplementedError('A LinkAction object must have a '
@@ -372,15 +364,13 @@ class LinkAction(BaseAction):
     def get_ajax_update_url(self):
         table_url = self.table.get_absolute_url()
         params = urlencode(
-            OrderedDict([("action", self.name), ("table", self.table.name)])
+            SortedDict([("action", self.name), ("table", self.table.name)])
         )
         return "%s?%s" % (table_url, params)
 
-    def render(self, **kwargs):
-        action_dict = copy.copy(kwargs)
-        action_dict.update({"action": self, "is_single": True})
-        return render_to_string("horizon/common/_data_table_action.html",
-                                action_dict)
+    def render(self):
+        return render_to_string("horizon/common/_data_table_table_action.html",
+                                {"action": self})
 
     def associate_with_table(self, table):
         super(LinkAction, self).associate_with_table(table)
@@ -410,8 +400,7 @@ class LinkAction(BaseAction):
             else:
                 return urlresolvers.reverse(self.url)
         except urlresolvers.NoReverseMatch as ex:
-            LOG.info('No reverse found for "%(url)s": %(exception)s',
-                     {'url': self.url, 'exception': ex})
+            LOG.info('No reverse found for "%s": %s' % (self.url, ex))
             return self.url
 
 
@@ -433,38 +422,28 @@ class FilterAction(BaseAction):
         A string representing the name of the request parameter used for the
         search term. Default: ``"q"``.
 
-    .. attribute:: filter_type
+    .. attribute: filter_type
 
         A string representing the type of this filter. If this is set to
         ``"server"`` then ``filter_choices`` must also be provided.
         Default: ``"query"``.
 
-    .. attribute:: filter_choices
+    .. attribute: filter_choices
 
         Required for server type filters. A tuple of tuples representing the
         filter options. Tuple composition should evaluate to (string, string,
-        boolean, string, boolean), representing the following:
+        boolean), representing the filter parameter, display value, and whether
+        or not it should be applied to the API request as an API query
+        attribute. API type filters do not need to be accounted for in the
+        filter method since the API will do the filtering. However, server
+        type filters in general will need to be performed in the filter method.
+        By default this attribute is not provided.
 
-        * The first value is the filter parameter.
-        * The second value represents display value.
-        * The third optional value indicates whether or not it should be
-          applied to the API request as an API query attribute. API type
-          filters do not need to be accounted for in the filter method since
-          the API will do the filtering. However, server type filters in
-          general will need to be performed in the filter method.
-          By default this attribute is not provided (``False``).
-        * The fourth optional value is used as help text if provided.
-          The default is ``None`` which means no help text.
-        * The fifth optional value determines whether or not the choice
-          is displayed to users. It defaults to ``True``. This is useful
-          when the choice needs to be displayed conditionally.
-
-    .. attribute:: needs_preloading
+    .. attribute: needs_preloading
 
         If True, the filter function will be called for the initial
         GET request with an empty ``filter_string``, regardless of the
         value of ``method``.
-
     """
     # TODO(gabriel): The method for a filter action should be a GET,
     # but given the form structure of the table that's currently impossible.
@@ -513,13 +492,9 @@ class FilterAction(BaseAction):
                 # in the __init__. However, the current workflow of DataTable
                 # and actions won't allow it. Need to be fixed in the future.
                 cls_name = self.__class__.__name__
-                raise NotImplementedError(
-                    "You must define a %(func_name)s method for %(data_type)s"
-                    " data type in %(cls_name)s."
-                    % {'func_name': func_name,
-                       'data_type': data_type,
-                       'cls_name': cls_name})
-
+                raise NotImplementedError("You must define a %s method "
+                                          "for %s data type in %s." %
+                                          (func_name, data_type, cls_name))
             _data = filter_func(table, data, filter_string)
             self.assign_type_string(table, _data, data_type)
             filtered_data.extend(_data)
@@ -534,33 +509,15 @@ class FilterAction(BaseAction):
         return data
 
     def is_api_filter(self, filter_field):
-        """Determine if agiven filter field should be used as an API filter."""
+        """Determine if the given filter field should be used as an
+        API filter.
+        """
         if self.filter_type == 'server':
             for choice in self.filter_choices:
                 if (choice[0] == filter_field and len(choice) > 2 and
-                        choice[2]):
+                        choice[2] is True):
                     return True
         return False
-
-    def get_select_options(self):
-        """Provide the value, string, and help_text for the template to render.
-
-        help_text is returned if applicable.
-        """
-        if self.filter_choices:
-            return [choice[:4] for choice in self.filter_choices
-                    # Display it If the fifth element is True or does not exist
-                    if len(choice) < 5 or choice[4]]
-
-
-class NameFilterAction(FilterAction):
-    """A filter action for name property."""
-
-    def filter(self, table, items, filter_string):
-        """Naive case-insensitive search."""
-        query = filter_string.lower()
-        return [item for item in items
-                if query in item.name.lower()]
 
 
 class FixedFilterAction(FilterAction):
@@ -585,7 +542,8 @@ class FixedFilterAction(FilterAction):
         return self.categories[filter_string]
 
     def get_fixed_buttons(self):
-        """Returns a list of dict describing fixed buttons used for filtering.
+        """Returns a list of dictionaries describing the fixed buttons
+        to use for filtering.
 
         Each list item should be a dict with the following keys:
 
@@ -596,80 +554,135 @@ class FixedFilterAction(FilterAction):
         """
         return []
 
-    def categorize(self, table, rows):
-        """Override to separate rows into categories.
-
-        To have filtering working properly on the client, each row will need
-        CSS class(es) beginning with 'category-', followed by the value of the
-        fixed button.
+    def categorize(self, table, images):
+        """Override to separate images into categories.
 
         Return a dict with a key for the value of each fixed button,
-        and a value that is a list of rows in that category.
+        and a value that is a list of images in that category.
         """
         return {}
 
 
 class BatchAction(Action):
-    """A table action which takes batch action on one or more objects.
-
-    This action should not require user input on a per-object basis.
+    """A table action which takes batch action on one or more
+    objects. This action should not require user input on a
+    per-object basis.
 
     .. attribute:: name
 
-       A short name or "slug" representing this action.
-       Should be one word such as "delete", "add", "disable", etc.
+       An internal name for this action.
 
     .. method:: action_present
 
-       Method returning a present action name. This is used as an action label.
-
-       Method must accept an integer/long parameter and return the display
+       Method accepting an integer/long parameter and returning the display
        forms of the name properly pluralised (depending on the integer) and
        translated in a string or tuple/list.
 
-       The returned display form is highly recommended to be a complete action
-       name with a form of a transitive verb and an object noun. Each word is
-       capitalized and the string should be marked as translatable.
+    .. attribute:: action_present (PendingDeprecation)
 
-       If tuple or list - then setting self.current_present_action = n will
-       set the current active item from the list(action_present[n])
+       String or tuple/list. The display forms of the name.
+       Should be a transitive verb, capitalized and translated. ("Delete",
+       "Rotate", etc.) If tuple or list - then setting
+       self.current_present_action = n will set the current active item
+       from the list(action_present[n])
+
+       You can pass a complete action name including 'data_type' by specifying
+       '%(data_type)s' substitution in action_present ("Delete %(data_type)s").
+       Otherwise a complete action name is a format of "<action> <data_type>".
+       <data_type> is determined based on the number of items.
+       By passing a complete action name you allow translators to control
+       the order of words as they want.
+
+       NOTE: action_present attribute is bad for translations and should be
+       avoided. Please use the action_present method instead.
+       This form is kept for legacy.
 
     .. method:: action_past
 
-       Method returning a past action name. This is usually used to display
-       a message when the action is completed.
-
-       Method must accept an integer/long parameter and return the display
+       Method accepting an integer/long parameter and returning the display
        forms of the name properly pluralised (depending on the integer) and
        translated in a string or tuple/list.
 
-       The detail is same as that of ``action_present``.
+    .. attribute:: action_past (PendingDeprecation)
+
+       String or tuple/list. The past tense of action_present. ("Deleted",
+       "Rotated", etc.) If tuple or list - then
+       setting self.current_past_action = n will set the current active item
+       from the list(action_past[n])
+
+       NOTE: action_past attribute is bad for translations and should be
+       avoided. Please use the action_past method instead.
+       This form is kept for legacy.
+
+    .. attribute:: data_type_singular
+
+       Optional display name (if the data_type method is not defined) for the
+       type of data that receives the action. ("Key Pair", "Floating IP", etc.)
+
+    .. attribute:: data_type_plural
+
+       Optional plural word (if the data_type method is not defined) for the
+       type of data being acted on. Defaults to appending 's'. Relying on the
+       default is bad for translations and should not be done, so it's absence
+       will raise a DeprecationWarning. It is currently kept as optional for
+       legacy code.
+
+       NOTE: data_type_singular and data_type_plural attributes are bad for
+       translations and should be avoided. Please use the action_present and
+       action_past methods. This form is kept for legacy.
 
     .. attribute:: success_url
 
        Optional location to redirect after completion of the delete
        action. Defaults to the current page.
-
-    .. attribute:: help_text
-
-       Optional message for providing an appropriate help text for
-       the horizon user.
-
     """
-
-    help_text = _("This action cannot be undone.")
 
     def __init__(self, **kwargs):
         super(BatchAction, self).__init__(**kwargs)
 
-        action_present_method = callable(getattr(self, 'action_present', None))
-        action_past_method = callable(getattr(self, 'action_past', None))
+        action_present_method = False
+        if hasattr(self, 'action_present'):
+            if callable(self.action_present):
+                action_present_method = True
+            else:
+                warnings.warn(PendingDeprecationWarning(
+                    'The %s BatchAction class must have an action_present '
+                    'method instead of attribute.' % self.__class__.__name__
+                ))
 
-        if not action_present_method or not action_past_method:
+        action_past_method = False
+        if hasattr(self, 'action_past'):
+            if callable(self.action_past):
+                action_past_method = True
+            else:
+                warnings.warn(PendingDeprecationWarning(
+                    'The %s BatchAction class must have an action_past '
+                    'method instead of attribute.' % self.__class__.__name__
+                ))
+
+        action_methods = action_present_method and action_past_method
+        has_action_method = action_present_method or action_past_method
+
+        if has_action_method and not action_methods:
             raise NotImplementedError(
-                'The %s BatchAction class must have both action_past and '
+                'The %s BatchAction class must have both action_past and'
                 'action_present methods.' % self.__class__.__name__
             )
+
+        if not action_methods:
+            if not kwargs.get('data_type_singular'):
+                raise NotImplementedError(
+                    'The %s BatchAction class must have a data_type_singular '
+                    'attribute when action_past and action_present attributes '
+                    'are used.' % self.__class__.__name__
+                )
+            self.data_type_singular = kwargs.get('data_type_singular')
+            self.data_type_plural = kwargs.get('data_type_plural',
+                                               self.data_type_singular + 's')
+
+        # TODO(ygbo): get rid of self.use_action_method once action_present and
+        # action_past are changed to methods handling plurals.
+        self.use_action_method = action_methods
 
         self.success_url = kwargs.get('success_url', None)
         # If setting a default name, don't initialize it too early
@@ -683,8 +696,6 @@ class BatchAction(Action):
         # Keep record of successfully handled objects
         self.success_ids = []
 
-        self.help_text = kwargs.get('help_text', self.help_text)
-
     def _allowed(self, request, datum=None):
         # Override the default internal action method to prevent batch
         # actions from appearing on tables with no data.
@@ -693,7 +704,8 @@ class BatchAction(Action):
         return super(BatchAction, self)._allowed(request, datum)
 
     def _get_action_name(self, items=None, past=False):
-        """Retreive action name based on the number of items and `past` flag.
+        """Builds combinations like 'Delete Object' and 'Deleted
+        Objects' based on the number of items and `past` flag.
 
         :param items:
 
@@ -718,19 +730,39 @@ class BatchAction(Action):
         else:
             count = len(items)
 
-        action_attr = getattr(self, "action_%s" % action_type)(count)
-        if isinstance(action_attr, (six.string_types, Promise)):
+        # TODO(ygbo): get rid of self.use_action_method once action_present and
+        # action_past are changed to methods handling plurals.
+        action_attr = getattr(self, "action_%s" % action_type)
+        if self.use_action_method:
+            action_attr = action_attr(count)
+        if isinstance(action_attr, (basestring, Promise)):
             action = action_attr
         else:
             toggle_selection = getattr(self, "current_%s_action" % action_type)
             action = action_attr[toggle_selection]
 
-        return action
+        if self.use_action_method:
+            return action
+        # TODO(ygbo): get rid of all this bellow once action_present and
+        # action_past are changed to methods handling plurals.
+        data_type = ungettext_lazy(
+            self.data_type_singular,
+            self.data_type_plural,
+            count
+        )
+        if '%(data_type)s' in action:
+            # If full action string is specified, use action as format string.
+            msgstr = action
+        else:
+            if action_type == "past":
+                msgstr = pgettext_lazy("past", "%(action)s %(data_type)s")
+            else:
+                msgstr = pgettext_lazy("present", "%(action)s %(data_type)s")
+        return msgstr % {'action': action, 'data_type': data_type}
 
     def action(self, request, datum_id):
-        """Accepts a single object id and performs the specific action.
-
-        This method is required.
+        """Required. Accepts a single object id and performs the specific
+        action.
 
         Return values are discarded, errors raised are caught and logged.
         """
@@ -747,25 +779,18 @@ class BatchAction(Action):
             return self.success_url
         return request.get_full_path()
 
-    def get_default_attrs(self):
-        """Returns a list of the default HTML attributes for the action."""
-        attrs = super(BatchAction, self).get_default_attrs()
-        attrs.update({'data-batch-action': 'true'})
-        return attrs
-
     def handle(self, table, request, obj_ids):
         action_success = []
         action_failure = []
         action_not_allowed = []
         for datum_id in obj_ids:
             datum = table.get_object_by_id(datum_id)
-            datum_display = table.get_object_display(datum) or datum_id
+            datum_display = table.get_object_display(datum) or _("N/A")
             if not table._filter_action(self, request, datum):
                 action_not_allowed.append(datum_display)
-                LOG.warning(u'Permission denied to %(name)s: "%(dis)s"', {
-                    'name': self._get_action_name(past=True).lower(),
-                    'dis': datum_display
-                })
+                LOG.info('Permission denied to %s: "%s"' %
+                         (self._get_action_name(past=True).lower(),
+                          datum_display))
                 continue
             try:
                 self.action(request, datum_id)
@@ -773,31 +798,18 @@ class BatchAction(Action):
                 self.update(request, datum)
                 action_success.append(datum_display)
                 self.success_ids.append(datum_id)
-                LOG.info(u'%(action)s: "%(datum_display)s"',
-                         {'action': self._get_action_name(past=True),
-                          'datum_display': datum_display})
+                LOG.info('%s: "%s"' %
+                         (self._get_action_name(past=True), datum_display))
             except Exception as ex:
-                handled_exc = isinstance(ex, exceptions.HandledException)
-                if handled_exc:
-                    # In case of HandledException, an error message should be
-                    # handled in exceptions.handle() or other logic,
-                    # so we don't need to handle the error message here.
-                    # NOTE(amotoki): To raise HandledException from the logic,
-                    # pass escalate=True and do not pass redirect argument
-                    # to exceptions.handle().
-                    # If an exception is handled, the original exception object
-                    # is stored in ex.wrapped[1].
-                    ex = ex.wrapped[1]
+                # Handle the exception but silence it since we'll display
+                # an aggregate error message later. Otherwise we'd get
+                # multiple error messages displayed to the user.
+                if getattr(ex, "_safe_message", None):
+                    ignore = False
                 else:
-                    # Handle the exception but silence it since we'll display
-                    # an aggregate error message later. Otherwise we'd get
-                    # multiple error messages displayed to the user.
+                    ignore = True
                     action_failure.append(datum_display)
-                action_description = (
-                    self._get_action_name(past=True).lower(), datum_display)
-                LOG.warning(
-                    'Action %(action)s Failed for %(reason)s', {
-                        'action': action_description, 'reason': ex})
+                exceptions.handle(request, ignore=ignore)
 
         # Begin with success message class, downgrade to info if problems.
         success_message_level = messages.success
@@ -834,40 +846,49 @@ class DeleteAction(BatchAction):
 
     .. method:: action_present
 
-       Method returning a present action name. This is used as an action label.
+        Method accepting an integer/long parameter and returning the display
+        forms of the name properly pluralised (depending on the integer) and
+        translated in a string or tuple/list.
 
-       Method must accept an integer/long parameter and return the display
-       forms of the name properly pluralised (depending on the integer) and
-       translated in a string or tuple/list.
+    .. attribute:: action_present (PendingDeprecation)
 
-       The returned display form is highly recommended to be a complete action
-       name with a form of a transitive verb and an object noun. Each word is
-       capitalized and the string should be marked as translatable.
+        A string containing the transitive verb describing the delete action.
+        Defaults to 'Delete'
 
-       If tuple or list - then setting self.current_present_action = n will
-       set the current active item from the list(action_present[n])
+        NOTE: action_present attribute is bad for translations and should be
+        avoided. Please use the action_present method instead.
+        This form is kept for legacy.
 
     .. method:: action_past
 
-       Method returning a past action name. This is usually used to display
-       a message when the action is completed.
+        Method accepting an integer/long parameter and returning the display
+        forms of the name properly pluralised (depending on the integer) and
+        translated in a string or tuple/list.
 
-       Method must accept an integer/long parameter and return the display
-       forms of the name properly pluralised (depending on the integer) and
-       translated in a string or tuple/list.
+    .. attribute:: action_past (PendingDeprecation)
 
-       The detail is same as that of ``action_present``.
+        A string set to the past tense of action_present.
+        Defaults to 'Deleted'
 
-    .. attribute:: success_url
+        NOTE: action_past attribute is bad for translations and should be
+        avoided. Please use the action_past method instead.
+        This form is kept for legacy.
 
-       Optional location to redirect after completion of the delete
-       action. Defaults to the current page.
+    .. attribute:: data_type_singular (PendingDeprecation)
 
-    .. attribute:: help_text
+        A string used to name the data to be deleted.
 
-       Optional message for providing an appropriate help text for
-       the horizon user.
+    .. attribute:: data_type_plural (PendingDeprecation)
 
+        Optional. Plural of ``data_type_singular``.
+        Defaults to ``data_type_singular`` appended with an 's'.  Relying on
+        the default is bad for translations and should not be done, so it's
+        absence will raise a DeprecationWarning. It is currently kept as
+        optional for legacy code.
+
+        NOTE: data_type_singular and data_type_plural attributes are bad for
+        translations and should be avoided. Please use the action_present and
+        action_past methods. This form is kept for legacy.
     """
 
     name = "delete"
@@ -875,8 +896,11 @@ class DeleteAction(BatchAction):
     def __init__(self, **kwargs):
         super(DeleteAction, self).__init__(**kwargs)
         self.name = kwargs.get('name', self.name)
-        self.icon = "trash"
-        self.action_type = "danger"
+        if not hasattr(self, "action_present"):
+            self.action_present = kwargs.get('action_present', _("Delete"))
+        if not hasattr(self, "action_past"):
+            self.action_past = kwargs.get('action_past', _("Deleted"))
+        self.icon = "remove"
 
     def action(self, request, obj_id):
         """Action entry point. Overrides base class' action method.
@@ -892,121 +916,26 @@ class DeleteAction(BatchAction):
         Override to provide delete functionality specific to your data.
         """
 
+    def get_default_classes(self):
+        """Appends ``btn-danger`` to the action's default css classes.
 
-class handle_exception_with_detail_message(object):
-    """Decorator to allow special exception handling in BatchAction.action().
-
-    An exception from BatchAction.action() or DeleteAction.delete() is
-    normally caught by BatchAction.handle() and BatchAction.handle() displays
-    an aggregated error message. However, there are cases where we would like
-    to provide an error message which explains a failure reason if some
-    exception occurs so that users can understand situation better.
-
-    This decorator allows us to do this kind of special handling easily.
-    This can be applied to BatchAction.action() and DeleteAction.delete()
-    methods.
-
-    :param normal_log_message: Log message template when an exception other
-        than ``target_exception`` is detected. Keyword substituion "%(id)s"
-        and "%(exc)s" can be used.
-
-    :param target_exception: Exception class should be handled specially.
-        If this exception is caught, a log message will be logged using
-        ``target_log_message`` and a user visible will be shown using
-        ``target_user_message``. In this case, an aggregated error message
-        generated by BatchAction.handle() does not include an object which
-        causes this exception.
-
-    :param target_log_message: Log message template when an exception specified
-        in ``target_exception`` is detected. Keyword substituion "%(id)s"
-        and "%(exc)s" can be used.
-
-    :param target_user_message: User visible message template when an exception
-        specified in ``target_exception`` is detected. It is recommended to
-        use an internationalized string. Keyword substituion "%(name)s"
-        and "%(exc)s" can be used.
-
-    :param logger_name: (optional) Logger name to be used.
-        The usual pattern is to pass __name__ of a caller.
-        This allows us to show a module name of a caller in a logged message.
-    """
-
-    def __init__(self, normal_log_message, target_exception,
-                 target_log_message, target_user_message, logger_name=None):
-        self.logger = logging.getLogger(logger_name or __name__)
-        self.normal_log_message = normal_log_message
-        self.target_exception = target_exception
-        self.target_log_message = target_log_message
-        self.target_user_message = target_user_message
-
-    def __call__(self, fn):
-        @functools.wraps(fn)
-        def decorated(instance, request, obj_id):
-            try:
-                fn(instance, request, obj_id)
-            except self.target_exception as e:
-                self.logger.info(self.target_log_message,
-                                 {'id': obj_id, 'exc': e})
-                obj = instance.table.get_object_by_id(obj_id)
-                name = instance.table.get_object_display(obj)
-                msg = self.target_user_message % {'name': name, 'exc': e}
-                # 'escalate=True' is required to notify the caller
-                # (DeleteAction) of the failure. exceptions.handle() will
-                # raise a wrapped exception of HandledException and BatchAction
-                # will handle it. 'redirect' should not be passed here as
-                # 'redirect' has a priority over 'escalate' argument.
-                exceptions.handle(request, msg, escalate=True)
-            except Exception as e:
-                self.logger.info(self.normal_log_message,
-                                 {'id': obj_id, 'exc': e})
-                # NOTE: No exception handling is required here because
-                # BatchAction.handle() does it. What we need to do is
-                # just to re-raise the exception.
-                raise
-        return decorated
+        This method ensures the corresponding button is highlighted
+        as a trigger for a potentially dangerous action.
+        """
+        classes = super(DeleteAction, self).get_default_classes()
+        classes += ("btn-danger",)
+        return classes
 
 
-class Deprecated(type):
-    # TODO(lcastell) Replace class with similar functionality from
-    # oslo_log.versionutils when it's finally added in 11.0
-    def __new__(meta, name, bases, kwargs):
-        cls = super(Deprecated, meta).__new__(meta, name, bases, kwargs)
-        if name != 'UpdateAction':
-            LOG.warning(
-                "WARNING:The UpdateAction class defined in module '%(mod)s' "
-                "is deprecated as of Newton and may be removed in "
-                "Horizon P (12.0). Class '%(name)s' defined at "
-                "module '%(module)s' shall no longer subclass it.",
-                {'mod': UpdateAction.__module__,
-                 'name': name,
-                 'module': kwargs['__module__']})
-        return cls
-
-
-@six.add_metaclass(Deprecated)
 class UpdateAction(object):
-    """**DEPRECATED**: A table action for cell updates by inline editing."""
-
+    """A table action for cell updates by inline editing."""
     name = "update"
+    action_present = _("Update")
+    action_past = _("Updated")
+    data_type_singular = "update"
 
     def action(self, request, datum, obj_id, cell_name, new_cell_value):
         self.update_cell(request, datum, obj_id, cell_name, new_cell_value)
-
-    @staticmethod
-    def action_present(count):
-        return ungettext_lazy(
-            u"Update Item",
-            u"Update Items",
-            count
-        )
-
-    @staticmethod
-    def action_past(count):
-        return ungettext_lazy(
-            u"Updated Item",
-            u"Updated Items",
-            count
-        )
 
     def update_cell(self, request, datum, obj_id, cell_name, new_cell_value):
         """Method for saving data of the cell.

@@ -16,36 +16,32 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import json
 import logging
 
-from oslo_utils import units
-from six.moves import builtins
-
-from django.conf import settings
+from django import conf
 from django.core.urlresolvers import reverse
 from django.core.urlresolvers import reverse_lazy
 from django.utils.translation import ugettext_lazy as _
 
 from horizon import exceptions
-from horizon import messages
+from horizon import forms
 from horizon import tables
+from horizon.utils import memoized
 
 from openstack_dashboard import api
 from openstack_dashboard.dashboards.project.images.images import views
-from openstack_dashboard import policy
 
 from openstack_dashboard.dashboards.admin.images import forms as project_forms
 from openstack_dashboard.dashboards.admin.images \
     import tables as project_tables
 
-
 LOG = logging.getLogger(__name__)
 
 
 class IndexView(tables.DataTableView):
-    DEFAULT_FILTERS = {'is_public': None}
     table_class = project_tables.AdminImagesTable
-    page_title = _("Images")
+    template_name = 'admin/images/index.html'
 
     def has_prev_data(self, table):
         return self._prev
@@ -53,93 +49,56 @@ class IndexView(tables.DataTableView):
     def has_more_data(self, table):
         return self._more
 
-    def needs_filter_first(self, table):
-        return self._needs_filter_first
-
     def get_data(self):
         images = []
-
-        if not policy.check((("image", "get_images"),), self.request):
-            msg = _("Insufficient privilege level to retrieve image list.")
-            messages.info(self.request, msg)
-            return images
         filters = self.get_filters()
-
-        filter_first = getattr(settings, 'FILTER_DATA_FIRST', {})
-        if filter_first.get('admin.images', False) and \
-                len(filters) == len(self.DEFAULT_FILTERS):
-            self._prev = False
-            self._more = False
-            self._needs_filter_first = True
-            return images
-
-        self._needs_filter_first = False
-
         prev_marker = self.request.GET.get(
             project_tables.AdminImagesTable._meta.prev_pagination_param, None)
 
         if prev_marker is not None:
+            sort_dir = 'asc'
             marker = prev_marker
         else:
+            sort_dir = 'desc'
             marker = self.request.GET.get(
                 project_tables.AdminImagesTable._meta.pagination_param, None)
-        reversed_order = prev_marker is not None
         try:
             images, self._more, self._prev = api.glance.image_list_detailed(
                 self.request,
                 marker=marker,
                 paginate=True,
                 filters=filters,
-                sort_dir='asc',
-                sort_key='name',
-                reversed_order=reversed_order)
+                sort_dir=sort_dir)
+
+            if prev_marker is not None:
+                images = sorted(images, key=lambda image:
+                                getattr(image, 'created_at'), reverse=True)
 
         except Exception:
             self._prev = False
             self._more = False
             msg = _('Unable to retrieve image list.')
             exceptions.handle(self.request, msg)
-        if images:
-            try:
-                tenants, more = api.keystone.tenant_list(self.request)
-            except Exception:
-                tenants = []
-                msg = _('Unable to retrieve project list.')
-                exceptions.handle(self.request, msg)
-
-            tenant_dict = dict([(t.id, t.name) for t in tenants])
-
-            for image in images:
-                image.tenant_name = tenant_dict.get(image.owner)
         return images
 
     def get_filters(self):
-        filters = self.DEFAULT_FILTERS.copy()
+        filters = {'is_public': None}
         filter_field = self.table.get_filter_field()
         filter_string = self.table.get_filter_string()
         filter_action = self.table._meta._filter_action
         if filter_field and filter_string and (
                 filter_action.is_api_filter(filter_field)):
             if filter_field in ['size_min', 'size_max']:
-                invalid_msg = ('API query is not valid and is ignored: '
-                               '%(field)s=%(string)s')
+                invalid_msg = ('API query is not valid and is ignored: %s=%s'
+                               % (filter_field, filter_string))
                 try:
-                    filter_string = builtins.int(float(filter_string)
-                                                 * (units.Mi))
+                    filter_string = long(float(filter_string) * (1024 ** 2))
                     if filter_string >= 0:
                         filters[filter_field] = filter_string
                     else:
-                        LOG.warning(invalid_msg,
-                                    {'field': filter_field,
-                                     'string': filter_string})
+                        LOG.warning(invalid_msg)
                 except ValueError:
-                    LOG.warning(invalid_msg,
-                                {'field': filter_field,
-                                 'string': filter_string})
-            elif (filter_field == 'disk_format' and
-                  filter_string.lower() == 'docker'):
-                filters['disk_format'] = 'raw'
-                filters['container_format'] = 'docker'
+                    LOG.warning(invalid_msg)
             else:
                 filters[filter_field] = filter_string
         return filters
@@ -148,24 +107,87 @@ class IndexView(tables.DataTableView):
 class CreateView(views.CreateView):
     template_name = 'admin/images/create.html'
     form_class = project_forms.AdminCreateImageForm
-    submit_url = reverse_lazy('horizon:admin:images:create')
     success_url = reverse_lazy('horizon:admin:images:index')
-    page_title = _("Create An Image")
 
 
 class UpdateView(views.UpdateView):
     template_name = 'admin/images/update.html'
     form_class = project_forms.AdminUpdateImageForm
-    submit_url = "horizon:admin:images:update"
     success_url = reverse_lazy('horizon:admin:images:index')
-    page_title = _("Edit Image")
 
 
 class DetailView(views.DetailView):
+    """Admin placeholder for image detail view."""
+    pass
+
+
+class UpdateMetadataView(forms.ModalFormView):
+    template_name = "admin/images/update_metadata.html"
+    form_class = project_forms.UpdateMetadataForm
+    success_url = reverse_lazy('horizon:admin:images:index')
+
+    def get_initial(self):
+        image = self.get_object()
+        return {'id': self.kwargs["id"], 'metadata': image.properties}
 
     def get_context_data(self, **kwargs):
-        context = super(DetailView, self).get_context_data(**kwargs)
-        table = project_tables.AdminImagesTable(self.request)
-        context["url"] = reverse('horizon:admin:images:index')
-        context["actions"] = table.render_row_actions(context["image"])
+        context = super(UpdateMetadataView, self).get_context_data(**kwargs)
+
+        image = self.get_object()
+        reserved_props = getattr(conf.settings,
+                                 'IMAGE_RESERVED_CUSTOM_PROPERTIES', [])
+        image.properties = dict((k, v)
+                                for (k, v) in image.properties.iteritems()
+                                if k not in reserved_props)
+        context['existing_metadata'] = json.dumps(image.properties)
+
+        resource_type = 'OS::Glance::Image'
+        namespaces = []
+        try:
+            # metadefs_namespace_list() returns a tuple with list as 1st elem
+            available_namespaces = [x.namespace for x in
+                                    api.glance.metadefs_namespace_list(
+                                        self.request,
+                                        filters={"resource_types":
+                                                 [resource_type]}
+                                    )[0]]
+            for namespace in available_namespaces:
+                details = api.glance.metadefs_namespace_get(self.request,
+                                                            namespace,
+                                                            resource_type)
+                # Filter out reserved custom properties from namespace
+                if reserved_props:
+                    if hasattr(details, 'properties'):
+                        details.properties = dict(
+                            (k, v)
+                            for (k, v) in details.properties.iteritems()
+                            if k not in reserved_props
+                        )
+
+                    if hasattr(details, 'objects'):
+                        for obj in details.objects:
+                            obj['properties'] = dict(
+                                (k, v)
+                                for (k, v) in obj['properties'].iteritems()
+                                if k not in reserved_props
+                            )
+
+                namespaces.append(details)
+
+        except Exception:
+            msg = _('Unable to retrieve available properties for image.')
+            exceptions.handle(self.request, msg)
+
+        context['available_metadata'] = json.dumps({'namespaces': namespaces})
+        context['id'] = self.kwargs['id']
         return context
+
+    @memoized.memoized_method
+    def get_object(self):
+        image_id = self.kwargs['id']
+        try:
+            return api.glance.image_get(self.request, image_id)
+        except Exception:
+            msg = _('Unable to retrieve the image to be updated.')
+            exceptions.handle(self.request, msg,
+                              redirect=reverse('horizon:admin:images:index'))

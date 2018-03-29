@@ -21,15 +21,13 @@ from horizon import forms
 from horizon import messages
 
 from openstack_dashboard import api
-from openstack_dashboard.utils import identity as identity_utils
 
 
 LOG = logging.getLogger(__name__)
 
 
 class CreateGroupForm(forms.SelfHandlingForm):
-    name = forms.CharField(label=_("Name"),
-                           max_length=64)
+    name = forms.CharField(label=_("Name"))
     description = forms.CharField(widget=forms.widgets.Textarea(
                                   attrs={'rows': 4}),
                                   label=_("Description"),
@@ -37,11 +35,11 @@ class CreateGroupForm(forms.SelfHandlingForm):
 
     def handle(self, request, data):
         try:
-            LOG.info('Creating group with name "%s"', data['name'])
+            LOG.info('Creating group with name "%s"' % data['name'])
+            domain_context = request.session.get('domain_context', None)
             api.keystone.group_create(
                 request,
-                domain_id=identity_utils.get_domain_id_for_operation(
-                    self.request),
+                domain_id=domain_context,
                 name=data['name'],
                 description=data['description'])
             messages.success(request,
@@ -55,8 +53,7 @@ class CreateGroupForm(forms.SelfHandlingForm):
 
 class UpdateGroupForm(forms.SelfHandlingForm):
     group_id = forms.CharField(widget=forms.HiddenInput())
-    name = forms.CharField(label=_("Name"),
-                           max_length=64)
+    name = forms.CharField(label=_("Name"))
     description = forms.CharField(widget=forms.widgets.Textarea(
                                   attrs={'rows': 4}),
                                   label=_("Description"),

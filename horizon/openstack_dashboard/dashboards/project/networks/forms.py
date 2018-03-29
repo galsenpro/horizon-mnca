@@ -26,7 +26,6 @@ from horizon import forms
 from horizon import messages
 
 from openstack_dashboard import api
-from openstack_dashboard import policy
 
 
 LOG = logging.getLogger(__name__)
@@ -34,35 +33,25 @@ LOG = logging.getLogger(__name__)
 
 class UpdateNetwork(forms.SelfHandlingForm):
     name = forms.CharField(label=_("Name"), required=False)
-    admin_state = forms.BooleanField(label=_("Enable Admin State"),
-                                     required=False)
-    shared = forms.BooleanField(label=_("Shared"), required=False)
+    tenant_id = forms.CharField(widget=forms.HiddenInput)
+    # TODO(amotoki): make UP/DOWN translatable
+    admin_state = forms.ChoiceField(choices=[(True, 'UP'), (False, 'DOWN')],
+                                    label=_("Admin State"))
     failure_url = 'horizon:project:networks:index'
-
-    def __init__(self, request, *args, **kwargs):
-        super(UpdateNetwork, self).__init__(request, *args, **kwargs)
-
-        if not policy.check((("network", "update_network:shared"),), request):
-            self.fields['shared'].widget = forms.HiddenInput()
 
     def handle(self, request, data):
         try:
-            params = {'admin_state_up': data['admin_state'],
+            params = {'admin_state_up': (data['admin_state'] == 'True'),
                       'name': data['name']}
-            # Make sure we are not sending shared data when the user
-            # doesnt'have admin rights because even if the user doesn't
-            # change it neutron sends back a 403 error
-            if policy.check((("network", "update_network:shared"),), request):
-                params['shared'] = data['shared']
             network = api.neutron.network_update(request,
                                                  self.initial['network_id'],
                                                  **params)
             msg = _('Network %s was successfully updated.') % data['name']
+            LOG.debug(msg)
             messages.success(request, msg)
             return network
-        except Exception as e:
-            LOG.info('Failed to update network %(id)s: %(exc)s',
-                     {'id': self.initial['network_id'], 'exc': e})
+        except Exception:
             msg = _('Failed to update network %s') % data['name']
+            LOG.info(msg)
             redirect = reverse(self.failure_url)
             exceptions.handle(request, msg, redirect=redirect)

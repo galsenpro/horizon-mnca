@@ -27,9 +27,9 @@ class ComputeHostTab(tabs.TableTab):
 
     def get_compute_host_data(self):
         try:
-            return nova.service_list(self.tab_group.request,
-                                     binary='nova-compute')
+            services = nova.service_list(self.tab_group.request)
+            return [service for service in services
+                    if service.binary == 'nova-compute']
         except Exception:
             msg = _('Unable to get nova services list.')
             exceptions.handle(self.tab_group.request, msg)
-            return []

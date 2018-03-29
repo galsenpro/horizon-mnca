@@ -13,6 +13,7 @@
 #    under the License.
 
 from django.conf.urls import include
+from django.conf.urls import patterns
 from django.conf.urls import url
 
 from openstack_dashboard.dashboards.admin.networks.agents \
@@ -31,21 +32,17 @@ from openstack_dashboard.dashboards.admin.networks import views
 NETWORKS = r'^(?P<network_id>[^/]+)/%s$'
 
 
-urlpatterns = [
+urlpatterns = patterns(
+    '',
     url(r'^$', views.IndexView.as_view(), name='index'),
     url(r'^create/$', views.CreateView.as_view(), name='create'),
     url(NETWORKS % 'update', views.UpdateView.as_view(), name='update'),
+    # for detail view
     url(NETWORKS % 'detail', views.DetailView.as_view(), name='detail'),
-    url(NETWORKS % 'detail\?tab=network_tabs__ports_tab$',
-        views.DetailView.as_view(), name='ports_tab'),
-    url(NETWORKS % 'detail\?tab=network_tabs__agents_tab$',
-        views.DetailView.as_view(), name='agents_tab'),
-    url(NETWORKS % 'detail\?tab=network_tabs__subnets_tab$',
-        views.DetailView.as_view(), name='subnets_tab'),
     url(NETWORKS % 'agents/add',
         agent_views.AddView.as_view(), name='adddhcpagent'),
     url(NETWORKS % 'subnets/create',
-        subnet_views.CreateView.as_view(), name='createsubnet'),
+        subnet_views.CreateView.as_view(), name='addsubnet'),
     url(NETWORKS % 'ports/create',
         port_views.CreateView.as_view(), name='addport'),
     url(r'^(?P<network_id>[^/]+)/subnets/(?P<subnet_id>[^/]+)/update$',
@@ -54,5 +51,4 @@ urlpatterns = [
         port_views.UpdateView.as_view(), name='editport'),
 
     url(r'^subnets/', include(subnet_urls, namespace='subnets')),
-    url(r'^ports/', include(port_urls, namespace='ports')),
-]
+    url(r'^ports/', include(port_urls, namespace='ports')))

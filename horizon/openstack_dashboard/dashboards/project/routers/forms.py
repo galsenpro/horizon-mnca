@@ -32,24 +32,9 @@ LOG = logging.getLogger(__name__)
 
 
 class CreateForm(forms.SelfHandlingForm):
-    name = forms.CharField(max_length=255, label=_("Router Name"),
-                           required=False)
-    admin_state_up = forms.BooleanField(label=_("Enable Admin State"),
-                                        initial=True,
-                                        required=False)
-    external_network = forms.ThemableChoiceField(label=_("External Network"),
-                                                 required=False)
-    enable_snat = forms.BooleanField(label=_("Enable SNAT"),
-                                     initial=True,
-                                     required=False)
-    mode = forms.ThemableChoiceField(label=_("Router Type"))
-    ha = forms.ThemableChoiceField(label=_("High Availability Mode"))
-    az_hints = forms.MultipleChoiceField(
-        label=_("Availability Zone Hints"),
-        required=False,
-        help_text=_("Availability Zones where the router may be scheduled. "
-                    "Leaving this unset is equivalent to selecting all "
-                    "Availability Zones"))
+    name = forms.CharField(max_length=255, label=_("Router Name"))
+    mode = forms.ChoiceField(label=_("Router Type"))
+    ha = forms.ChoiceField(label=_("High Availability Mode"))
     failure_url = 'horizon:project:routers:index'
 
     def __init__(self, request, *args, **kwargs):
@@ -73,61 +58,10 @@ class CreateForm(forms.SelfHandlingForm):
             self.fields['ha'].choices = ha_choices
         else:
             del self.fields['ha']
-        networks = self._get_network_list(request)
-        if networks:
-            self.fields['external_network'].choices = networks
-        else:
-            del self.fields['external_network']
-
-        self.enable_snat_allowed = self.initial['enable_snat_allowed']
-        if (not networks or not self.enable_snat_allowed):
-            del self.fields['enable_snat']
-
-        try:
-            az_supported = api.neutron.is_extension_supported(
-                self.request, 'router_availability_zone')
-
-            if az_supported:
-                zones = api.neutron.list_availability_zones(
-                    self.request, 'router', 'available')
-                self.fields['az_hints'].choices = [(zone['name'], zone['name'])
-                                                   for zone in zones]
-            else:
-                del self.fields['az_hints']
-        except Exception:
-            msg = _("Failed to get availability zone list.")
-            exceptions.handle(self.request, msg)
-            del self.fields['az_hints']
-
-    def _get_network_list(self, request):
-        search_opts = {'router:external': True}
-        try:
-            networks = api.neutron.network_list(request, **search_opts)
-        except Exception as e:
-            LOG.info('Failed to get network list: %s', e)
-            msg = _('Failed to get network list.')
-            messages.warning(request, msg)
-            networks = []
-
-        choices = [(network.id, network.name or network.id)
-                   for network in networks]
-        if choices:
-            choices.insert(0, ("", _("Select network")))
-        return choices
 
     def handle(self, request, data):
         try:
             params = {'name': data['name']}
-            if 'admin_state_up' in data and data['admin_state_up']:
-                params['admin_state_up'] = data['admin_state_up']
-            if 'external_network' in data and data['external_network']:
-                params['external_gateway_info'] = {'network_id':
-                                                   data['external_network']}
-                if self.enable_snat_allowed:
-                    params['external_gateway_info']['enable_snat'] = \
-                        data['enable_snat']
-            if 'az_hints' in data and data['az_hints']:
-                params['availability_zone_hints'] = data['az_hints']
             if (self.dvr_allowed and data['mode'] != 'server_default'):
                 params['distributed'] = (data['mode'] == 'distributed')
             if (self.ha_allowed and data['ha'] != 'server_default'):
@@ -137,11 +71,11 @@ class CreateForm(forms.SelfHandlingForm):
             messages.success(request, message)
             return router
         except Exception as exc:
-            LOG.info('Failed to create router: %s', exc)
             if exc.status_code == 409:
                 msg = _('Quota exceeded for resource router.')
             else:
                 msg = _('Failed to create router "%s".') % data['name']
+            LOG.info(msg)
             redirect = reverse(self.failure_url)
             exceptions.handle(request, msg, redirect=redirect)
             return False
@@ -149,9 +83,12 @@ class CreateForm(forms.SelfHandlingForm):
 
 class UpdateForm(forms.SelfHandlingForm):
     name = forms.CharField(label=_("Name"), required=False)
-    admin_state = forms.BooleanField(label=_("Enable Admin State"),
-                                     required=False)
-    mode = forms.ThemableChoiceField(label=_("Router Type"))
+    # TODO(amotoki): make UP/DOWN translatable
+    admin_state = forms.ChoiceField(choices=[(True, 'UP'), (False, 'DOWN')],
+                                    label=_("Admin State"))
+    router_id = forms.CharField(label=_("ID"),
+                                widget=forms.HiddenInput())
+    mode = forms.ChoiceField(label=_("Router Type"))
     ha = forms.BooleanField(label=_("High Availability Mode"), required=False)
 
     redirect_url = reverse_lazy('horizon:project:routers:index')
@@ -162,7 +99,7 @@ class UpdateForm(forms.SelfHandlingForm):
                                                               "dvr", "update")
         if not self.dvr_allowed:
             del self.fields['mode']
-        elif self.initial.get('mode') == 'distributed':
+        elif kwargs.get('initial', {}).get('mode') == 'distributed':
             # Neutron supports only changing from centralized to
             # distributed now.
             mode_choices = [('distributed', _('Distributed'))]
@@ -184,20 +121,19 @@ class UpdateForm(forms.SelfHandlingForm):
 
     def handle(self, request, data):
         try:
-            params = {'admin_state_up': data['admin_state'],
+            params = {'admin_state_up': (data['admin_state'] == 'True'),
                       'name': data['name']}
             if self.dvr_allowed:
                 params['distributed'] = (data['mode'] == 'distributed')
             if self.ha_allowed:
                 params['ha'] = data['ha']
-            router = api.neutron.router_update(request,
-                                               self.initial['router_id'],
+            router = api.neutron.router_update(request, data['router_id'],
                                                **params)
             msg = _('Router %s was successfully updated.') % data['name']
+            LOG.debug(msg)
             messages.success(request, msg)
             return router
-        except Exception as exc:
-            LOG.info('Failed to update router %(id)s: %(exc)s',
-                     {'id': self.initial['router_id'], 'exc': exc})
+        except Exception:
             msg = _('Failed to update router %s') % data['name']
+            LOG.info(msg)
             exceptions.handle(request, msg, redirect=self.redirect_url)

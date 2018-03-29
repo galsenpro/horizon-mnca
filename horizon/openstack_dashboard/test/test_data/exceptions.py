@@ -12,13 +12,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import ceilometerclient.exc as ceilometer_exceptions
 from cinderclient import exceptions as cinder_exceptions
 import glanceclient.exc as glance_exceptions
 from keystoneclient import exceptions as keystone_exceptions
 from neutronclient.common import exceptions as neutron_exceptions
 from novaclient import exceptions as nova_exceptions
-import six
 from swiftclient import client as swift_exceptions
+from troveclient import exceptions as trove_exceptions
 
 from openstack_dashboard.test.test_data import utils
 
@@ -45,7 +46,7 @@ def create_stubbed_exception(cls, status_code=500):
         return str(self.message)
 
     def fake_unicode(self):
-        return six.text_type(self.message)
+        return unicode(self.message)
 
     cls.__init__ = fake_init_exception
     cls.__str__ = fake_str
@@ -72,6 +73,9 @@ def data(TEST):
     glance_exception = glance_exceptions.ClientException
     TEST.exceptions.glance = create_stubbed_exception(glance_exception)
 
+    ceilometer_exception = ceilometer_exceptions.HTTPException
+    TEST.exceptions.ceilometer = create_stubbed_exception(ceilometer_exception)
+
     neutron_exception = neutron_exceptions.NeutronClientException
     TEST.exceptions.neutron = create_stubbed_exception(neutron_exception)
 
@@ -80,3 +84,10 @@ def data(TEST):
 
     cinder_exception = cinder_exceptions.BadRequest
     TEST.exceptions.cinder = create_stubbed_exception(cinder_exception)
+
+    trove_exception = trove_exceptions.ClientException
+    TEST.exceptions.trove = create_stubbed_exception(trove_exception)
+
+    trove_auth = trove_exceptions.Unauthorized
+    TEST.exceptions.trove_unauthorized =  \
+        create_stubbed_exception(trove_auth)

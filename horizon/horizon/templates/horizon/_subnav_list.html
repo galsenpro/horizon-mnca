@@ -1,6 +1,6 @@
 {% load horizon %}
 
-{% for heading, panels in components.items %}
+{% for heading, panels in components.iteritems %}
   {% with panels|has_permissions_on_list:user as filtered_panels %}
     {% if filtered_panels %}
       {% if accessible_panels %}

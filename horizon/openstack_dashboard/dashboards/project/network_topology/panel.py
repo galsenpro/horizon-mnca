@@ -20,8 +20,13 @@ from django.utils.translation import ugettext_lazy as _
 
 import horizon
 
+from openstack_dashboard.dashboards.project import dashboard
+
 
 class NetworkTopology(horizon.Panel):
     name = _("Network Topology")
     slug = 'network_topology'
     permissions = ('openstack.services.network', )
+
+
+dashboard.Project.register(NetworkTopology)

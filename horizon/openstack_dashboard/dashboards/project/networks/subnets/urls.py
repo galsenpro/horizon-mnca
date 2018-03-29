@@ -12,13 +12,17 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from django.conf.urls import patterns
 from django.conf.urls import url
 
 from openstack_dashboard.dashboards.project.networks.subnets import views
 
 
 SUBNETS = r'^(?P<subnet_id>[^/]+)/%s$'
+VIEW_MOD = 'openstack_dashboard.dashboards.project.networks.subnets.views'
 
-urlpatterns = [
-    url(SUBNETS % 'detail', views.DetailView.as_view(), name='detail'),
-]
+
+urlpatterns = patterns(
+    VIEW_MOD,
+    url(SUBNETS % 'detail', views.DetailView.as_view(), name='detail')
+)

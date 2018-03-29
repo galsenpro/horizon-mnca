@@ -12,16 +12,14 @@
 
 from __future__ import division
 
-from csv import DictWriter
-from csv import writer
+from csv import DictWriter  # noqa
+from csv import writer  # noqa
 
+from StringIO import StringIO
 
-from django.http import HttpResponse
-from django.http import StreamingHttpResponse
+from django.http import HttpResponse  # noqa
 from django import template as django_template
-import six
-
-from six import StringIO
+from django import VERSION  # noqa
 
 
 class CsvDataMixin(object):
@@ -37,8 +35,7 @@ class CsvDataMixin(object):
         self.out = StringIO()
         super(CsvDataMixin, self).__init__()
         if hasattr(self, "columns"):
-            columns = [self.encode(col) for col in self.columns]
-            self.writer = DictWriter(self.out, columns)
+            self.writer = DictWriter(self.out, map(self.encode, self.columns))
             self.is_dict = True
         else:
             self.writer = writer(self.out)
@@ -57,17 +54,14 @@ class CsvDataMixin(object):
     def write_csv_row(self, args):
         if self.is_dict:
             self.writer.writerow(dict(zip(
-                self.writer.fieldnames, [self.encode(col) for col in args])))
+                self.writer.fieldnames, map(self.encode, args))))
         else:
-            self.writer.writerow([self.encode(col) for col in args])
+            self.writer.writerow(map(self.encode, args))
 
     def encode(self, value):
-        value = six.text_type(value)
-        if six.PY2:
-            # csv and StringIO cannot work with mixed encodings,
-            # so encode all with utf-8
-            value = value.encode('utf-8')
-        return value
+        # csv and StringIO cannot work with mixed encodings,
+        # so encode all with utf-8
+        return unicode(value).encode('utf-8')
 
 
 class BaseCsvResponse(CsvDataMixin, HttpResponse):
@@ -84,7 +78,8 @@ class BaseCsvResponse(CsvDataMixin, HttpResponse):
         if template:
             # Display some header info if provided as a template
             header_template = django_template.loader.get_template(template)
-            self.header = header_template.render(self.context, request)
+            context = django_template.RequestContext(request, self.context)
+            self.header = header_template.render(context)
 
         if self.header:
             self.out.write(self.encode(self.header))
@@ -102,41 +97,47 @@ class BaseCsvResponse(CsvDataMixin, HttpResponse):
         return []
 
 
-class BaseCsvStreamingResponse(CsvDataMixin, StreamingHttpResponse):
+if VERSION >= (1, 5, 0):
 
-    """Base CSV Streaming class. Provides streaming response for CSV data."""
+    from django.http import StreamingHttpResponse  # noqa
 
-    def __init__(self, request, template, context, content_type, **kwargs):
-        super(BaseCsvStreamingResponse, self).__init__()
-        self['Content-Disposition'] = 'attachment; filename="%s"' % (
-            kwargs.get("filename", "export.csv"),)
-        self['Content-Type'] = content_type
-        self.context = context
-        self.header = None
-        if template:
-            # Display some header info if provided as a template
-            header_template = django_template.loader.get_template(template)
-            self.header = header_template.render(self.context, request)
+    class BaseCsvStreamingResponse(CsvDataMixin, StreamingHttpResponse):
 
-        self._closable_objects.append(self.out)
+        """Base CSV Streaming class. Provides streaming response for CSV data.
+        """
 
-        self.streaming_content = self.get_content()
+        def __init__(self, request, template, context, content_type, **kwargs):
+            super(BaseCsvStreamingResponse, self).__init__()
+            self['Content-Disposition'] = 'attachment; filename="%s"' % (
+                kwargs.get("filename", "export.csv"),)
+            self['Content-Type'] = content_type
+            self.context = context
+            self.header = None
+            if template:
+                # Display some header info if provided as a template
+                header_template = django_template.loader.get_template(template)
+                context = django_template.RequestContext(request, self.context)
+                self.header = header_template.render(context)
 
-    def buffer(self):
-        buf = self.out.getvalue()
-        self.out.truncate(0)
-        return buf
+            self._closable_objects.append(self.out)
 
-    def get_content(self):
-        if self.header:
-            self.out.write(self.encode(self.header))
+            self.streaming_content = self.get_content()
 
-        self.write_csv_header()
-        yield self.buffer()
+        def buffer(self):
+            buf = self.out.getvalue()
+            self.out.truncate(0)
+            return buf
 
-        for row in self.get_row_data():
-            self.write_csv_row(row)
+        def get_content(self):
+            if self.header:
+                self.out.write(self.encode(self.header))
+
+            self.write_csv_header()
             yield self.buffer()
 
-    def get_row_data(self):
-        return []
+            for row in self.get_row_data():
+                self.write_csv_row(row)
+                yield self.buffer()
+
+        def get_row_data(self):
+            return []

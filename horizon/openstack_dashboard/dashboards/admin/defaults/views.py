@@ -26,7 +26,6 @@ from openstack_dashboard.usage import quotas
 class IndexView(tabs.TabbedTableView):
     tab_group_class = project_tabs.DefaultsTabs
     template_name = 'admin/defaults/index.html'
-    page_title = _("Defaults")
 
 
 class UpdateDefaultQuotasView(workflows.WorkflowView):
@@ -38,7 +37,7 @@ class UpdateDefaultQuotasView(workflows.WorkflowView):
         # get initial quota defaults
         try:
             quota_defaults = quotas.get_default_quota_data(self.request)
-            for field in quotas.QUOTA_FIELDS:
+            for field in (quotas.QUOTA_FIELDS + quotas.MISSING_QUOTA_FIELDS):
                 initial[field] = quota_defaults.get(field).limit
 
         except Exception:

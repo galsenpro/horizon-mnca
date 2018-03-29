@@ -18,16 +18,14 @@ from django.conf import settings
 from django.core.urlresolvers import reverse
 from django.utils.translation import ugettext_lazy as _
 
-from openstack_auth import utils
-
 from horizon import exceptions
 from horizon import forms
 from horizon import messages
 from horizon import workflows
 
 from openstack_dashboard import api
-from openstack_dashboard.dashboards.identity.domains import constants
 
+from openstack_dashboard.dashboards.identity.domains import constants
 
 LOG = logging.getLogger(__name__)
 
@@ -42,7 +40,7 @@ class CreateDomainInfoAction(workflows.Action):
                                  required=False,
                                  initial=True)
 
-    class Meta(object):
+    class Meta:
         name = _("Domain Information")
         slug = "create_domain"
         help_text = _("Domains provide separation between users and "
@@ -125,7 +123,7 @@ class UpdateDomainUsersAction(workflows.MembershipAction):
                     field_name = self.get_member_field_name(role_id)
                     self.fields[field_name].initial.append(user_id)
 
-    class Meta(object):
+    class Meta:
         name = _("Domain Members")
         slug = constants.DOMAIN_USER_MEMBER_SLUG
 
@@ -222,7 +220,7 @@ class UpdateDomainGroupsAction(workflows.MembershipAction):
                     field_name = self.get_member_field_name(role.id)
                     self.fields[field_name].initial.append(group.id)
 
-    class Meta(object):
+    class Meta:
         name = _("Domain Groups")
         slug = constants.DOMAIN_GROUP_MEMBER_SLUG
 
@@ -265,7 +263,7 @@ class CreateDomain(workflows.Workflow):
     def handle(self, request, data):
         # create the domain
         try:
-            LOG.info('Creating domain with name "%s"', data['name'])
+            LOG.info('Creating domain with name "%s"' % data['name'])
             desc = data['description']
             api.keystone.domain_create(request,
                                        name=data['name'],
@@ -279,7 +277,7 @@ class CreateDomain(workflows.Workflow):
 
 class UpdateDomainInfoAction(CreateDomainInfoAction):
 
-    class Meta(object):
+    class Meta:
         name = _("Domain Information")
         slug = 'update_domain'
         help_text = _("Domains provide separation between users and "
@@ -318,36 +316,31 @@ class UpdateDomain(workflows.Workflow):
         try:
             # Get our role options
             available_roles = api.keystone.role_list(request)
-            # Get the users currently associated with this domain so we
+            # Get the users currently associated with this project so we
             # can diff against it.
-            users_roles = api.keystone.get_domain_users_roles(request,
-                                                              domain=domain_id)
-            users_to_modify = len(users_roles)
-            all_users = api.keystone.user_list(request,
-                                               domain=domain_id)
-            users_dict = {user.id: user.name for user in all_users}
+            domain_members = api.keystone.user_list(request,
+                                                    domain=domain_id)
+            users_to_modify = len(domain_members)
 
-            for user_id in users_roles.keys():
-                # Don't remove roles if the user isn't in the domain
-                if user_id not in users_dict:
-                    users_to_modify -= 1
-                    continue
-
+            for user in domain_members:
                 # Check if there have been any changes in the roles of
-                # Existing domain members.
-                current_role_ids = list(users_roles[user_id])
+                # Existing project members.
+                current_roles = api.keystone.roles_for_user(self.request,
+                                                            user.id,
+                                                            domain=domain_id)
+                current_role_ids = [role.id for role in current_roles]
 
                 for role in available_roles:
                     field_name = member_step.get_member_field_name(role.id)
                     # Check if the user is in the list of users with this role.
-                    if user_id in data[field_name]:
+                    if user.id in data[field_name]:
                         # Add it if necessary
                         if role.id not in current_role_ids:
                             # user role has changed
                             api.keystone.add_domain_user_role(
                                 request,
                                 domain=domain_id,
-                                user=user_id,
+                                user=user.id,
                                 role=role.id)
                         else:
                             # User role is unchanged, so remove it from the
@@ -356,21 +349,17 @@ class UpdateDomain(workflows.Workflow):
                             current_role_ids.pop(index)
 
                 # Prevent admins from doing stupid things to themselves.
-                is_current_user = user_id == request.user.id
+                is_current_user = user.id == request.user.id
                 # TODO(lcheng) When Horizon moves to Domain scoped token for
                 # invoking identity operation, replace this with:
                 # domain_id == request.user.domain_id
                 is_current_domain = True
 
-                available_admin_role_ids = [
-                    role.id for role in available_roles
-                    if role.name.lower() in utils.get_admin_roles()
-                ]
-                admin_role_ids = [role for role in current_role_ids
-                                  if role in available_admin_role_ids]
-                if len(admin_role_ids):
-                    removing_admin = any([role in current_role_ids
-                                          for role in admin_role_ids])
+                admin_roles = [role for role in current_roles
+                               if role.name.lower() == 'admin']
+                if len(admin_roles):
+                    removing_admin = any([role.id in current_role_ids
+                                          for role in admin_roles])
                 else:
                     removing_admin = False
                 if is_current_user and is_current_domain and removing_admin:
@@ -388,11 +377,11 @@ class UpdateDomain(workflows.Workflow):
                         api.keystone.remove_domain_user_role(
                             request,
                             domain=domain_id,
-                            user=user_id,
+                            user=user.id,
                             role=id_to_delete)
                 users_to_modify -= 1
 
-            # Grant new roles on the domain.
+            # Grant new roles on the project.
             for role in available_roles:
                 field_name = member_step.get_member_field_name(role.id)
                 # Count how many users may be added for exception handling.
@@ -401,9 +390,9 @@ class UpdateDomain(workflows.Workflow):
                 users_added = 0
                 field_name = member_step.get_member_field_name(role.id)
                 for user_id in data[field_name]:
-                    if user_id not in users_roles:
-                        api.keystone.add_domain_user_role(request,
-                                                          domain=domain_id,
+                    if not filter(lambda x: user_id == x.id, domain_members):
+                        api.keystone.add_tenant_user_role(request,
+                                                          project=domain_id,
                                                           user=user_id,
                                                           role=role.id)
                     users_added += 1
@@ -491,9 +480,9 @@ class UpdateDomain(workflows.Workflow):
         domain_id = data.pop('domain_id')
 
         try:
-            LOG.info('Updating domain with name "%s"', data['name'])
+            LOG.info('Updating domain with name "%s"' % data['name'])
             api.keystone.domain_update(request,
-                                       domain_id,
+                                       domain_id=domain_id,
                                        name=data['name'],
                                        description=data['description'],
                                        enabled=data['enabled'])

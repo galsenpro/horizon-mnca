@@ -16,8 +16,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from datetime import datetime
+import logging
 
+from oslo_utils import timeutils
 import six.moves.urllib.parse as urlparse
 import swiftclient
 
@@ -25,12 +26,13 @@ from django.conf import settings
 from django.utils.translation import ugettext_lazy as _
 
 from horizon import exceptions
+from horizon.utils.memoized import memoized  # noqa
 
 from openstack_dashboard.api import base
-from openstack_dashboard.contrib.developer.profiler import api as profiler
 
+
+LOG = logging.getLogger(__name__)
 FOLDER_DELIMITER = "/"
-CHUNK_SIZE = getattr(settings, 'SWIFT_FILE_TRANSFER_CHUNK_SIZE', 512 * 1024)
 # Swift ACL
 GLOBAL_READ_ACL = ".r:*"
 LIST_CONTENTS_ACL = ".rlistings"
@@ -67,7 +69,7 @@ class PseudoFolder(base.APIDictWrapper):
 
     @property
     def bytes(self):
-        return 0
+        return None
 
     @property
     def content_type(self):
@@ -103,6 +105,7 @@ def _metadata_to_header(metadata):
     return headers
 
 
+@memoized
 def swift_api(request):
     endpoint = base.url_for(request, 'object-store')
     cacert = getattr(settings, 'OPENSTACK_SSL_CACERT', None)
@@ -117,7 +120,6 @@ def swift_api(request):
                                          auth_version="2.0")
 
 
-@profiler.trace
 def swift_container_exists(request, container_name):
     try:
         swift_api(request).head_container(container_name)
@@ -126,7 +128,6 @@ def swift_container_exists(request, container_name):
         return False
 
 
-@profiler.trace
 def swift_object_exists(request, container_name, object_name):
     try:
         swift_api(request).head_object(container_name, object_name)
@@ -135,12 +136,10 @@ def swift_object_exists(request, container_name, object_name):
         return False
 
 
-@profiler.trace
-def swift_get_containers(request, marker=None, prefix=None):
+def swift_get_containers(request, marker=None):
     limit = getattr(settings, 'API_RESULT_LIMIT', 1000)
     headers, containers = swift_api(request).get_account(limit=limit + 1,
                                                          marker=marker,
-                                                         prefix=prefix,
                                                          full_listing=True)
     container_objs = [Container(c) for c in containers]
     if(len(container_objs) > limit):
@@ -149,7 +148,6 @@ def swift_get_containers(request, marker=None, prefix=None):
         return (container_objs, False)
 
 
-@profiler.trace
 def swift_get_container(request, container_name, with_data=True):
     if with_data:
         headers, data = swift_api(request).get_object(container_name, "")
@@ -168,7 +166,7 @@ def swift_get_container(request, container_name, with_data=True):
             parameters = urlparse.quote(container_name.encode('utf8'))
             public_url = swift_endpoint + '/' + parameters
         ts_float = float(headers.get('x-timestamp'))
-        timestamp = datetime.utcfromtimestamp(ts_float).isoformat()
+        timestamp = timeutils.iso8601_from_timestamp(ts_float)
     except Exception:
         pass
     container_info = {
@@ -183,7 +181,6 @@ def swift_get_container(request, container_name, with_data=True):
     return Container(container_info)
 
 
-@profiler.trace
 def swift_create_container(request, name, metadata=({})):
     if swift_container_exists(request, name):
         raise exceptions.AlreadyExists(name, 'container')
@@ -192,28 +189,26 @@ def swift_create_container(request, name, metadata=({})):
     return Container({'name': name})
 
 
-@profiler.trace
 def swift_update_container(request, name, metadata=({})):
     headers = _metadata_to_header(metadata)
     swift_api(request).post_container(name, headers=headers)
     return Container({'name': name})
 
 
-@profiler.trace
 def swift_delete_container(request, name):
     # It cannot be deleted if it's not empty. The batch remove of objects
     # be done in swiftclient instead of Horizon.
     objects, more = swift_get_objects(request, name)
     if objects:
-        error_msg = _("The container cannot be deleted "
-                      "since it is not empty.")
+        error_msg = unicode(_("The container cannot be deleted "
+                              "since it's not empty."))
         exc = exceptions.Conflict(error_msg)
+        exc._safe_message = error_msg
         raise exc
     swift_api(request).delete_container(name)
     return True
 
 
-@profiler.trace
 def swift_get_objects(request, container_name, prefix=None, marker=None,
                       limit=None):
     limit = limit or getattr(settings, 'API_RESULT_LIMIT', 1000)
@@ -232,7 +227,6 @@ def swift_get_objects(request, container_name, prefix=None, marker=None,
         return (object_objs, False)
 
 
-@profiler.trace
 def swift_filter_objects(request, filter_string, container_name, prefix=None,
                          marker=None):
     # FIXME(kewu): Swift currently has no real filtering API, thus the marker
@@ -268,7 +262,6 @@ def wildcard_search(string, q):
         return wildcard_search(tail, '*'.join(q_list[1:]))
 
 
-@profiler.trace
 def swift_copy_object(request, orig_container_name, orig_object_name,
                       new_container_name, new_object_name):
     if swift_object_exists(request, new_container_name, new_object_name):
@@ -282,7 +275,6 @@ def swift_copy_object(request, orig_container_name, orig_object_name,
                                          headers=headers)
 
 
-@profiler.trace
 def swift_upload_object(request, container_name, object_name,
                         object_file=None):
     headers = {}
@@ -294,19 +286,13 @@ def swift_upload_object(request, container_name, object_name,
     etag = swift_api(request).put_object(container_name,
                                          object_name,
                                          object_file,
-                                         content_length=size,
                                          headers=headers)
 
     obj_info = {'name': object_name, 'bytes': size, 'etag': etag}
     return StorageObject(obj_info, container_name)
 
 
-@profiler.trace
 def swift_create_pseudo_folder(request, container_name, pseudo_folder_name):
-    # Make sure the folder name doesn't already exist.
-    if swift_object_exists(request, container_name, pseudo_folder_name):
-        name = pseudo_folder_name.strip('/')
-        raise exceptions.AlreadyExists(name, 'pseudo-folder')
     headers = {}
     etag = swift_api(request).put_object(container_name,
                                          pseudo_folder_name,
@@ -320,38 +306,15 @@ def swift_create_pseudo_folder(request, container_name, pseudo_folder_name):
     return PseudoFolder(obj_info, container_name)
 
 
-@profiler.trace
 def swift_delete_object(request, container_name, object_name):
     swift_api(request).delete_object(container_name, object_name)
     return True
 
 
-@profiler.trace
-def swift_delete_folder(request, container_name, object_name):
-    objects, more = swift_get_objects(request, container_name,
-                                      prefix=object_name)
-    # In case the given object is pseudo folder,
-    # it can be deleted only if it is empty.
-    # swift_get_objects will return at least
-    # one object (i.e container_name) even if the
-    # given pseudo folder is empty. So if swift_get_objects
-    # returns more than one object then only it will be
-    # considered as non empty folder.
-    if len(objects) > 1:
-        error_msg = _("The pseudo folder cannot be deleted "
-                      "since it is not empty.")
-        exc = exceptions.Conflict(error_msg)
-        raise exc
-    swift_api(request).delete_object(container_name, object_name)
-    return True
-
-
-@profiler.trace
-def swift_get_object(request, container_name, object_name, with_data=True,
-                     resp_chunk_size=CHUNK_SIZE):
+def swift_get_object(request, container_name, object_name, with_data=True):
     if with_data:
-        headers, data = swift_api(request).get_object(
-            container_name, object_name, resp_chunk_size=resp_chunk_size)
+        headers, data = swift_api(request).get_object(container_name,
+                                                      object_name)
     else:
         data = None
         headers = swift_api(request).head_object(container_name,
@@ -360,7 +323,7 @@ def swift_get_object(request, container_name, object_name, with_data=True,
     timestamp = None
     try:
         ts_float = float(headers.get('x-timestamp'))
-        timestamp = datetime.utcfromtimestamp(ts_float).isoformat()
+        timestamp = timeutils.iso8601_from_timestamp(ts_float)
     except Exception:
         pass
     obj_info = {
@@ -374,13 +337,3 @@ def swift_get_object(request, container_name, object_name, with_data=True,
                          container_name,
                          orig_name=orig_name,
                          data=data)
-
-
-@profiler.trace
-def swift_get_capabilities(request):
-    try:
-        return swift_api(request).get_capabilities()
-    # NOTE(tsufiev): Ceph backend currently does not support '/info', even
-    # some Swift installations do not support it (see `expose_info` docs).
-    except swiftclient.exceptions.ClientException:
-        return {}

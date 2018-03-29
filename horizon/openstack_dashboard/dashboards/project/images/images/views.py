@@ -19,7 +19,6 @@
 """
 Views for managing images.
 """
-from django.conf import settings
 from django.core.urlresolvers import reverse
 from django.core.urlresolvers import reverse_lazy
 from django.utils.translation import ugettext_lazy as _
@@ -30,7 +29,6 @@ from horizon import tabs
 from horizon.utils import memoized
 
 from openstack_dashboard import api
-from openstack_dashboard.utils import filters
 
 from openstack_dashboard.dashboards.project.images.images \
     import forms as project_forms
@@ -42,49 +40,15 @@ from openstack_dashboard.dashboards.project.images.images \
 
 class CreateView(forms.ModalFormView):
     form_class = project_forms.CreateImageForm
-    form_id = "create_image_form"
-    submit_label = _("Create Image")
-    submit_url = reverse_lazy('horizon:project:images:images:create')
     template_name = 'project/images/images/create.html'
     context_object_name = 'image'
     success_url = reverse_lazy("horizon:project:images:index")
-    page_title = _("Create An Image")
-
-    def get_initial(self):
-        initial = {}
-        for name in [
-            'name',
-            'description',
-            'image_url',
-            'source_type',
-            'architecture',
-            'disk_format',
-            'minimum_disk',
-            'minimum_ram'
-        ]:
-            tmp = self.request.GET.get(name)
-            if tmp:
-                initial[name] = tmp
-        return initial
-
-    def get_context_data(self, **kwargs):
-        context = super(CreateView, self).get_context_data(**kwargs)
-        upload_mode = api.glance.get_image_upload_mode()
-        context['image_upload_enabled'] = upload_mode != 'off'
-        context['images_allow_location'] = getattr(settings,
-                                                   'IMAGES_ALLOW_LOCATION',
-                                                   False)
-        return context
 
 
 class UpdateView(forms.ModalFormView):
     form_class = project_forms.UpdateImageForm
-    form_id = "update_image_form"
-    submit_label = _("Edit Image")
-    submit_url = "horizon:project:images:images:update"
     template_name = 'project/images/images/update.html'
     success_url = reverse_lazy("horizon:project:images:index")
-    page_title = _("Edit Image")
 
     @memoized.memoized_method
     def get_object(self):
@@ -98,35 +62,27 @@ class UpdateView(forms.ModalFormView):
     def get_context_data(self, **kwargs):
         context = super(UpdateView, self).get_context_data(**kwargs)
         context['image'] = self.get_object()
-        args = (self.kwargs['image_id'],)
-        context['submit_url'] = reverse(self.submit_url, args=args)
         return context
 
     def get_initial(self):
         image = self.get_object()
         properties = getattr(image, 'properties', {})
-        data = {'image_id': self.kwargs['image_id'],
+        return {'image_id': self.kwargs['image_id'],
                 'name': getattr(image, 'name', None) or image.id,
                 'description': properties.get('description', ''),
                 'kernel': properties.get('kernel_id', ''),
                 'ramdisk': properties.get('ramdisk_id', ''),
                 'architecture': properties.get('architecture', ''),
+                'disk_format': getattr(image, 'disk_format', None),
                 'minimum_ram': getattr(image, 'min_ram', None),
                 'minimum_disk': getattr(image, 'min_disk', None),
                 'public': getattr(image, 'is_public', None),
                 'protected': getattr(image, 'protected', None)}
-        disk_format = getattr(image, 'disk_format', None)
-        if (disk_format == 'raw' and
-                getattr(image, 'container_format') == 'docker'):
-            disk_format = 'docker'
-        data['disk_format'] = disk_format
-        return data
 
 
 class DetailView(tabs.TabView):
     tab_group_class = project_tabs.ImageDetailTabs
-    template_name = 'horizon/common/_detail.html'
-    page_title = "{{ image.name }}"
+    template_name = 'project/images/images/detail.html'
 
     def get_context_data(self, **kwargs):
         context = super(DetailView, self).get_context_data(**kwargs)
@@ -135,8 +91,6 @@ class DetailView(tabs.TabView):
         context["image"] = image
         context["url"] = self.get_redirect_url()
         context["actions"] = table.render_row_actions(image)
-        choices = project_tables.ImagesTable.STATUS_DISPLAY_CHOICES
-        image.status_label = filters.get_display_label(choices, image.status)
         return context
 
     @staticmethod

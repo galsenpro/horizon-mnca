@@ -1,18 +1,3 @@
-/**
- * Licensed under the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License. You may obtain
- * a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations
- * under the License.
- */
-
-//TODO(lcastell):Inline edit is deprecated and will be removed in Horizon 12.0
 horizon.inline_edit = {
   get_cell_id: function (td_element) {
     return [
@@ -21,7 +6,7 @@ horizon.inline_edit = {
       td_element.data("cell-name")
     ].join('');
   },
-  get_object_container: function () {
+  get_object_container: function (td_element) {
     // global cell object container
     if (!window.cell_object_container) {
       window.cell_object_container = [];
@@ -67,7 +52,7 @@ horizon.inline_edit = {
           self.start_loading();
         },
         complete: function () {
-          // Bug in jQuery tool-tip, if I hover tool-tip, then confirm the field with
+          // Bug in Jquery tool-tip, if I hover tool-tip, then confirm the field with
           // enter and the cell is reloaded, tool-tip stays. So just to be sure, I am
           // removing tool-tips manually
           $(".tooltip.fade.top.in").remove();
@@ -77,6 +62,8 @@ horizon.inline_edit = {
             // if cell was updated successfully, I will show fading check sign
             var success = $('<div class="success"></div>');
             self.td_element.find('.inline-edit-status').append(success);
+
+            var background_color = self.td_element.css('background-color');
 
             // edit pencil will disappear and appear again once the check sign has faded
             // also green background will disappear
@@ -92,47 +79,53 @@ horizon.inline_edit = {
             });
           }
         },
-        error: function(jqXHR) {
+        error: function(jqXHR, status, errorThrown) {
           if (jqXHR.status === 401){
             var redir_url = jqXHR.getResponseHeader("X-Horizon-Location");
             if (redir_url){
               location.href = redir_url;
             } else {
-              horizon.toast.add("error", gettext("Not authorized to do this operation."));
+              horizon.alert("error", gettext("Not authorized to do this operation."));
             }
           }
           else {
             if (!horizon.ajax.get_messages(jqXHR)) {
               // Generic error handler. Really generic.
-              horizon.toast.add("error", gettext("An error occurred. Please try again later."));
+              horizon.alert("error", gettext("An error occurred. Please try again later."));
             }
           }
         },
-        success: function (data) {
-          var $td_element = $(data);
-          var $tr, $cell_wrapper, td_element_text;
-          self.form_element = self.get_form_element($td_element);
+        success: function (data, textStatus, jqXHR) {
+          var td_element = $(data);
+          self.form_element = self.get_form_element(td_element);
 
           if (self.inline_edit_mod) {
-            var cellWidth = self.td_element.outerWidth(true);
-            $td_element.width(cellWidth);
-            $td_element.addClass("has-form");
+            // if cell is in inline edit mode
+            var table_cell_wrapper = td_element.find(".table_cell_wrapper");
+
+            width = self.td_element.outerWidth();
+            height = self.td_element.outerHeight();
+
+            td_element.width(width);
+            td_element.height(height);
+            td_element.css('margin', 0).css('padding', 0);
+            table_cell_wrapper.css('margin', 0).css('padding', 0);
+
+            if (self.form_element.attr('type') === 'checkbox'){
+              var inline_edit_form = td_element.find(".inline-edit-form");
+              inline_edit_form.css('padding-top', '11px').css('padding-left', '4px');
+              inline_edit_form.width(width - 40);
+            } else {
+              // setting CSS of element, so the cell remains the same size in editing mode
+              self.form_element.width(width - 40);
+              self.form_element.height(height - 2);
+              self.form_element.css('margin', 0).css('padding', 0);
+            }
           }
           // saving old td_element for cancel and loading purposes
           self.cached_presentation_view = self.td_element;
           // replacing old td with the new td element returned from the server
-          self.rewrite_cell($td_element);
-          // keeping parent tr's data-display attr up to date
-          $tr = $td_element.closest('tr');
-          if ($td_element.attr('data-cell-name') === $tr.attr('data-display-key')) {
-            $cell_wrapper= $td_element.find('.table_cell_data_wrapper');
-            if ($cell_wrapper.length) {
-              td_element_text = $cell_wrapper.find('a').text();
-              if ($tr.attr('data-display') !== td_element_text) {
-                $tr.attr('data-display', td_element_text);
-              }
-            }
-          }
+          self.rewrite_cell(td_element);
           // focusing the form element inside the cell
           if (self.inline_edit_mod) {
             self.form_element.focus();
@@ -154,7 +147,7 @@ horizon.inline_edit = {
             self.stop_loading();
           }
         },
-        error: function(jqXHR) {
+        error: function(jqXHR, status, errorThrown) {
           if (jqXHR.status === 400){
             // make place for error icon, only if the error icon is not already present
             if (self.td_element.find(".inline-edit-error .error").length <= 0) {
@@ -162,7 +155,7 @@ horizon.inline_edit = {
               self.form_element.width(self.form_element.width() - 20);
             }
             // obtain the error message from response body
-            var error_message = $.parseJSON(jqXHR.responseText).message;
+            error_message = $.parseJSON(jqXHR.responseText).message;
             // insert the error icon
             var error = $('<div title="' + error_message + '" class="error"></div>');
             self.td_element.find(".inline-edit-error").html(error);
@@ -173,17 +166,17 @@ horizon.inline_edit = {
             if (redir_url){
               location.href = redir_url;
             } else {
-              horizon.toast.add("error", gettext("Not authorized to do this operation."));
+              horizon.alert("error", gettext("Not authorized to do this operation."));
             }
           }
           else {
             if (!horizon.ajax.get_messages(jqXHR)) {
               // Generic error handler. Really generic.
-              horizon.toast.add("error", gettext("An error occurred. Please try again later."));
+              horizon.alert("error", gettext("An error occurred. Please try again later."));
             }
           }
         },
-        success: function () {
+        success: function (data, textStatus, jqXHR) {
           // if update was successful
           self.successful_update = true;
           self.refresh();
@@ -220,11 +213,8 @@ horizon.inline_edit = {
 };
 
 
-horizon.addInitFunction(horizon.inline_edit.init = function(parent) {
-  parent = parent || document;
-  var $table = $(parent).find('table');
-
-  $table.on('click', '.ajax-inline-edit', function (evt) {
+horizon.addInitFunction(function() {
+  $('table').on('click', '.ajax-inline-edit', function (evt) {
     var $this = $(this);
     var td_element = $this.parents('td').first();
 
@@ -246,17 +236,17 @@ horizon.addInitFunction(horizon.inline_edit.init = function(parent) {
     evt.preventDefault();
   };
 
-  $table.on('click', '.inline-edit-submit', function (evt) {
+  $('table').on('click', '.inline-edit-submit', function (evt) {
     submit_form(evt, this);
   });
 
-  $table.on('keypress', '.inline-edit-form', function (evt) {
+  $('table').on('keypress', '.inline-edit-form', function (evt) {
     if (evt.which === 13 && !evt.shiftKey) {
       submit_form(evt, this);
     }
   });
 
-  $table.on('click', '.inline-edit-cancel', function (evt) {
+  $('table').on('click', '.inline-edit-cancel', function (evt) {
     var $cancel = $(this);
     var td_element = $cancel.parents('td').first();
 
@@ -266,11 +256,11 @@ horizon.addInitFunction(horizon.inline_edit.init = function(parent) {
     evt.preventDefault();
   });
 
-  $table.on('mouseenter', '.inline_edit_available', function () {
+  $('table').on('mouseenter', '.inline_edit_available', function (evt) {
     $(this).find(".table_cell_action").fadeIn(100);
   });
 
-  $table.on('mouseleave', '.inline_edit_available', function () {
+  $('table').on('mouseleave', '.inline_edit_available', function (evt) {
     $(this).find(".table_cell_action").fadeOut(200);
   });
 });

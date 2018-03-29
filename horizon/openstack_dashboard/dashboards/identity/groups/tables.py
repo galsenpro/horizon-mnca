@@ -24,7 +24,6 @@ from horizon import tables
 from openstack_dashboard import api
 
 from openstack_dashboard.dashboards.identity.groups import constants
-from openstack_dashboard import policy
 
 
 LOG = logging.getLogger(__name__)
@@ -47,7 +46,7 @@ class CreateGroupLink(tables.LinkAction):
         return api.keystone.keystone_can_edit_group()
 
 
-class EditGroupLink(policy.PolicyTargetMixin, tables.LinkAction):
+class EditGroupLink(tables.LinkAction):
     name = "edit"
     verbose_name = _("Edit Group")
     url = constants.GROUPS_UPDATE_URL
@@ -59,7 +58,7 @@ class EditGroupLink(policy.PolicyTargetMixin, tables.LinkAction):
         return api.keystone.keystone_can_edit_group()
 
 
-class DeleteGroupsAction(policy.PolicyTargetMixin, tables.DeleteAction):
+class DeleteGroupsAction(tables.DeleteAction):
     @staticmethod
     def action_present(count):
         return ungettext_lazy(
@@ -76,19 +75,20 @@ class DeleteGroupsAction(policy.PolicyTargetMixin, tables.DeleteAction):
             count
         )
 
+    name = "delete"
     policy_rules = (("identity", "identity:delete_group"),)
 
     def allowed(self, request, datum):
         return api.keystone.keystone_can_edit_group()
 
     def delete(self, request, obj_id):
-        LOG.info('Deleting group "%s".', obj_id)
+        LOG.info('Deleting group "%s".' % obj_id)
         api.keystone.group_delete(request, obj_id)
 
 
 class ManageUsersLink(tables.LinkAction):
     name = "users"
-    verbose_name = _("Manage Members")
+    verbose_name = _("Modify Users")
     url = constants.GROUPS_MANAGE_URL
     icon = "pencil"
     policy_rules = (("identity", "identity:get_group"),
@@ -99,9 +99,16 @@ class ManageUsersLink(tables.LinkAction):
 
 
 class GroupFilterAction(tables.FilterAction):
-    filter_type = "server"
-    filter_choices = (("name", _("Group Name ="), True),
-                      ("id", _("Group ID ="), True))
+    def filter(self, table, groups, filter_string):
+        """Naive case-insensitive search."""
+        q = filter_string.lower()
+
+        def comp(group):
+            if q in group.name.lower():
+                return True
+            return False
+
+        return filter(comp, groups)
 
 
 class GroupsTable(tables.DataTable):
@@ -110,7 +117,7 @@ class GroupsTable(tables.DataTable):
                                 verbose_name=_('Description'))
     id = tables.Column('id', verbose_name=_('Group ID'))
 
-    class Meta(object):
+    class Meta:
         name = "groups"
         verbose_name = _("Groups")
         row_actions = (ManageUsersLink, EditGroupLink, DeleteGroupsAction)
@@ -124,7 +131,7 @@ class UserFilterAction(tables.FilterAction):
         q = filter_string.lower()
         return [user for user in users
                 if q in user.name.lower()
-                or q in (getattr(user, 'email', None) or '').lower()]
+                or q in getattr(user, 'email', '').lower()]
 
 
 class RemoveMembers(tables.DeleteAction):
@@ -153,8 +160,8 @@ class RemoveMembers(tables.DeleteAction):
     def action(self, request, obj_id):
         user_obj = self.table.get_object_by_id(obj_id)
         group_id = self.table.kwargs['group_id']
-        LOG.info('Removing user %(user)s from group %(group)s.',
-                 {'user': user_obj.id, 'group': group_id})
+        LOG.info('Removing user %s from group %s.' % (user_obj.id,
+                                                      group_id))
         api.keystone.remove_group_user(request,
                                        group_id=group_id,
                                        user_id=user_obj.id)
@@ -165,7 +172,7 @@ class RemoveMembers(tables.DeleteAction):
 
 class AddMembersLink(tables.LinkAction):
     name = "add_user_link"
-    verbose_name = _("Add Users")
+    verbose_name = _("Add...")
     classes = ("ajax-modal",)
     icon = "plus"
     url = constants.GROUPS_ADD_MEMBER_URL
@@ -180,24 +187,19 @@ class AddMembersLink(tables.LinkAction):
 
 
 class UsersTable(tables.DataTable):
-    name = tables.WrappingColumn('name', verbose_name=_('User Name'))
-    email = tables.Column(lambda obj: getattr(obj, 'email', None),
-                          verbose_name=_('Email'),
-                          filters=(lambda v: defaultfilters
-                                   .default_if_none(v, ""),
-                                   defaultfilters.escape,
-                                   defaultfilters.urlize))
+    name = tables.Column('name', verbose_name=_('User Name'))
+    email = tables.Column('email', verbose_name=_('Email'),
+                          filters=[defaultfilters.escape,
+                                   defaultfilters.urlize])
     id = tables.Column('id', verbose_name=_('User ID'))
     enabled = tables.Column('enabled', verbose_name=_('Enabled'),
                             status=True,
                             status_choices=STATUS_CHOICES,
-                            filters=(defaultfilters.yesno,
-                                     defaultfilters.capfirst),
-                            empty_value=_('False'))
+                            empty_value="False")
 
 
 class GroupMembersTable(UsersTable):
-    class Meta(object):
+    class Meta:
         name = "group_members"
         verbose_name = _("Group Members")
         table_actions = (UserFilterAction, AddMembersLink, RemoveMembers)
@@ -220,7 +222,7 @@ class AddMembers(tables.BatchAction):
             count
         )
 
-    name = "add"
+    name = "addMember"
     icon = "plus"
     requires_input = True
     success_url = constants.GROUPS_MANAGE_URL
@@ -232,8 +234,8 @@ class AddMembers(tables.BatchAction):
     def action(self, request, obj_id):
         user_obj = self.table.get_object_by_id(obj_id)
         group_id = self.table.kwargs['group_id']
-        LOG.info('Adding user %(user)s to group %(group)s.',
-                 {'user': user_obj.id, 'group': group_id})
+        LOG.info('Adding user %s to group %s.' % (user_obj.id,
+                                                  group_id))
         api.keystone.add_group_user(request,
                                     group_id=group_id,
                                     user_id=user_obj.id)
@@ -247,7 +249,7 @@ class AddMembers(tables.BatchAction):
 
 
 class GroupNonMembersTable(UsersTable):
-    class Meta(object):
+    class Meta:
         name = "group_non_members"
         verbose_name = _("Non-Members")
         table_actions = (UserFilterAction, AddMembers)

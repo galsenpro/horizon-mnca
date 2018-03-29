@@ -13,20 +13,16 @@
 #    under the License.
 import logging
 
+from django.core.urlresolvers import reverse
 from django import template
 from django.template import defaultfilters as filters
-from django.utils.translation import pgettext_lazy
 from django.utils.translation import ugettext_lazy as _
 from django.utils.translation import ungettext_lazy
-from neutronclient.common import exceptions as neutron_exceptions
 
 from horizon import exceptions
 from horizon import tables
-from horizon.tables import actions
 
 from openstack_dashboard import api
-from openstack_dashboard.dashboards.project.networks.subnets import tables \
-    as subnet_tables
 from openstack_dashboard import policy
 from openstack_dashboard.usage import quotas
 
@@ -34,7 +30,18 @@ from openstack_dashboard.usage import quotas
 LOG = logging.getLogger(__name__)
 
 
-class DeleteNetwork(policy.PolicyTargetMixin, tables.DeleteAction):
+class CheckNetworkEditable(object):
+    """Mixin class to determine the specified network is editable."""
+
+    def allowed(self, request, datum=None):
+        # Only administrator is allowed to create and manage shared networks.
+        if datum and datum.shared:
+            return False
+        return True
+
+
+class DeleteNetwork(policy.PolicyTargetMixin, CheckNetworkEditable,
+                    tables.DeleteAction):
     @staticmethod
     def action_present(count):
         return ungettext_lazy(
@@ -53,24 +60,25 @@ class DeleteNetwork(policy.PolicyTargetMixin, tables.DeleteAction):
 
     policy_rules = (("network", "delete_network"),)
 
-    @actions.handle_exception_with_detail_message(
-        # normal_log_message
-        'Failed to delete network %(id)s: %(exc)s',
-        # target_exception
-        neutron_exceptions.Conflict,
-        # target_log_message
-        'Unable to delete network %(id)s with 409 Conflict: %(exc)s',
-        # target_user_message
-        _('Unable to delete network %(name)s. Most possible reason is because '
-          'one or more ports still exist on the requested network.'),
-        # logger_name
-        __name__)
     def delete(self, request, network_id):
-        network = self.table.get_object_by_id(network_id)
-        LOG.debug('Network %(network_id)s has subnets: %(subnets)s',
-                  {'network_id': network_id, 'subnets': network.subnets})
-        api.neutron.network_delete(request, network_id)
-        LOG.debug('Deleted network %s successfully', network_id)
+        network_name = network_id
+        try:
+            # Retrieve the network list.
+            network = api.neutron.network_get(request, network_id,
+                                              expand_subnet=False)
+            network_name = network.name
+            LOG.debug('Network %(network_id)s has subnets: %(subnets)s',
+                      {'network_id': network_id, 'subnets': network.subnets})
+            for subnet_id in network.subnets:
+                api.neutron.subnet_delete(request, subnet_id)
+                LOG.debug('Deleted subnet %s', subnet_id)
+            api.neutron.network_delete(request, network_id)
+            LOG.debug('Deleted network %s successfully', network_id)
+        except Exception:
+            msg = _('Failed to delete network %s')
+            LOG.info(msg, network_id)
+            redirect = reverse("horizon:project:networks:index")
+            exceptions.handle(request, msg % network_name, redirect=redirect)
 
 
 class CreateNetwork(tables.LinkAction):
@@ -82,10 +90,8 @@ class CreateNetwork(tables.LinkAction):
     policy_rules = (("network", "create_network"),)
 
     def allowed(self, request, datum=None):
-        usages = quotas.tenant_quota_usages(request, targets=('network', ))
-        # when Settings.OPENSTACK_NEUTRON_NETWORK['enable_quotas'] = False
-        # usages["network"] is empty
-        if usages.get('network', {}).get('available', 1) <= 0:
+        usages = quotas.tenant_quota_usages(request)
+        if usages['networks']['available'] <= 0:
             if "disabled" not in self.classes:
                 self.classes = [c for c in self.classes] + ["disabled"]
                 self.verbose_name = _("Create Network (Quota exceeded)")
@@ -96,7 +102,8 @@ class CreateNetwork(tables.LinkAction):
         return True
 
 
-class EditNetwork(policy.PolicyTargetMixin, tables.LinkAction):
+class EditNetwork(policy.PolicyTargetMixin, CheckNetworkEditable,
+                  tables.LinkAction):
     name = "update"
     verbose_name = _("Edit Network")
     url = "horizon:project:networks:update"
@@ -105,30 +112,15 @@ class EditNetwork(policy.PolicyTargetMixin, tables.LinkAction):
     policy_rules = (("network", "update_network"),)
 
 
-class CreateSubnet(subnet_tables.SubnetPolicyTargetMixin, tables.LinkAction):
+class CreateSubnet(policy.PolicyTargetMixin, CheckNetworkEditable,
+                   tables.LinkAction):
     name = "subnet"
-    verbose_name = _("Create Subnet")
-    url = "horizon:project:networks:createsubnet"
+    verbose_name = _("Add Subnet")
+    url = "horizon:project:networks:addsubnet"
     classes = ("ajax-modal",)
     icon = "plus"
     policy_rules = (("network", "create_subnet"),)
-    # neutron has used both in their policy files, supporting both
-    policy_target_attrs = (("network:tenant_id", "tenant_id"),
-                           ("network:project_id", "tenant_id"),)
-
-    def allowed(self, request, datum=None):
-        usages = quotas.tenant_quota_usages(request, targets=('subnet', ))
-        # when Settings.OPENSTACK_NEUTRON_NETWORK['enable_quotas'] = False
-        # usages["subnet'] is empty
-        if usages.get('subnet', {}).get('available', 1) <= 0:
-            if 'disabled' not in self.classes:
-                self.classes = [c for c in self.classes] + ['disabled']
-                self.verbose_name = _('Create Subnet (Quota exceeded)')
-        else:
-            self.verbose_name = _('Create Subnet')
-            self.classes = [c for c in self.classes if c != 'disabled']
-
-        return True
+    policy_target_attrs = (("network:project_id", "tenant_id"),)
 
 
 def get_subnets(network):
@@ -137,78 +129,20 @@ def get_subnets(network):
     return template.loader.render_to_string(template_name, context)
 
 
-DISPLAY_CHOICES = (
-    ("up", pgettext_lazy("Admin state of a Network", u"UP")),
-    ("down", pgettext_lazy("Admin state of a Network", u"DOWN")),
-)
-STATUS_DISPLAY_CHOICES = (
-    ("active", pgettext_lazy("Current status of a Network", u"Active")),
-    ("build", pgettext_lazy("Current status of a Network", u"Build")),
-    ("down", pgettext_lazy("Current status of a Network", u"Down")),
-    ("error", pgettext_lazy("Current status of a Network", u"Error")),
-)
-
-
-def get_availability_zones(network):
-    if 'availability_zones' in network and network.availability_zones:
-        return ', '.join(network.availability_zones)
-    else:
-        return _("-")
-
-
-class ProjectNetworksFilterAction(tables.FilterAction):
-    name = "filter_project_networks"
-    filter_type = "server"
-    filter_choices = (('name', _("Name ="), True),
-                      ('shared', _("Shared ="), True,
-                       _("e.g. Yes / No")),
-                      ('router:external', _("External ="), True,
-                       _("e.g. Yes / No")),
-                      ('status', _("Status ="), True),
-                      ('admin_state_up', _("Admin State ="), True,
-                       _("e.g. UP / DOWN")))
-
-
 class NetworksTable(tables.DataTable):
-    name = tables.WrappingColumn("name_or_id",
-                                 verbose_name=_("Name"),
-                                 link='horizon:project:networks:detail')
+    name = tables.Column("name",
+                         verbose_name=_("Name"),
+                         link='horizon:project:networks:detail')
     subnets = tables.Column(get_subnets,
                             verbose_name=_("Subnets Associated"),)
     shared = tables.Column("shared", verbose_name=_("Shared"),
                            filters=(filters.yesno, filters.capfirst))
-    external = tables.Column("router:external", verbose_name=_("External"),
-                             filters=(filters.yesno, filters.capfirst))
-    status = tables.Column("status", verbose_name=_("Status"),
-                           display_choices=STATUS_DISPLAY_CHOICES)
+    status = tables.Column("status", verbose_name=_("Status"))
     admin_state = tables.Column("admin_state",
-                                verbose_name=_("Admin State"),
-                                display_choices=DISPLAY_CHOICES)
-    availability_zones = tables.Column(get_availability_zones,
-                                       verbose_name=_("Availability Zones"))
+                                verbose_name=_("Admin State"))
 
-    def __init__(self, request, data=None, needs_form_wrapper=None, **kwargs):
-        super(NetworksTable, self).__init__(
-            request,
-            data=data,
-            needs_form_wrapper=needs_form_wrapper,
-            **kwargs)
-        try:
-            if not api.neutron.is_extension_supported(
-                    request, "network_availability_zone"):
-                del self.columns["availability_zones"]
-        except Exception:
-            msg = _("Unable to check if network availability zone extension "
-                    "is supported")
-            exceptions.handle(self.request, msg)
-            del self.columns['availability_zones']
-
-    def get_object_display(self, network):
-        return network.name_or_id
-
-    class Meta(object):
+    class Meta:
         name = "networks"
         verbose_name = _("Networks")
-        table_actions = (CreateNetwork, DeleteNetwork,
-                         ProjectNetworksFilterAction)
+        table_actions = (CreateNetwork, DeleteNetwork)
         row_actions = (EditNetwork, CreateSubnet, DeleteNetwork)

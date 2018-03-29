@@ -12,7 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from datetime import datetime
+from datetime import datetime  # noqa
 import string
 
 import babel
@@ -21,24 +21,29 @@ from django.conf import settings
 from django import shortcuts
 from django.utils import encoding
 from django.utils import translation
-from django.utils.translation import ugettext_lazy as _
+
 import pytz
 
 from horizon import forms
 from horizon import messages
-from horizon.utils import functions
+
+
+def _one_year():
+    now = datetime.utcnow()
+    return datetime(now.year + 1, now.month, now.day, now.hour,
+                    now.minute, now.second, now.microsecond, now.tzinfo)
 
 
 class UserSettingsForm(forms.SelfHandlingForm):
-    max_value = getattr(settings, 'API_RESULT_LIMIT', 1000)
-    language = forms.ChoiceField(label=_("Language"))
-    timezone = forms.ChoiceField(label=_("Timezone"))
-    pagesize = forms.IntegerField(label=_("Items Per Page"),
+    language = forms.ChoiceField(label=("Language"))
+    timezone = forms.ChoiceField(label=("Timezone"))
+    pagesize = forms.IntegerField(label=("Items Per Page"),
                                   min_value=1,
-                                  max_value=max_value)
-    instance_log_length = forms.IntegerField(
-        label=_("Log Lines Per Instance"), min_value=1,
-        help_text=_("Number of log lines to be shown per instance"))
+                                  max_value=getattr(settings,
+                                                    'API_RESULT_LIMIT',
+                                                    1000),
+                                  help_text=("Number of items to show per "
+                                              "page"))
 
     @staticmethod
     def _sorted_zones():
@@ -72,54 +77,47 @@ class UserSettingsForm(forms.SelfHandlingForm):
         babel_locale = babel.Locale.parse(current_locale)
         for tz, offset in self._sorted_zones():
             try:
-                utc_offset = _("UTC %(hour)s:%(min)s") % {"hour": offset[:3],
+                utc_offset = ("UTC %(hour)s:%(min)s") % {"hour": offset[:3],
                                                           "min": offset[3:]}
             except Exception:
                 utc_offset = ""
 
             if tz == "UTC":
-                tz_name = _("UTC")
+                tz_name = ("UTC")
             elif tz == "GMT":
-                tz_name = _("GMT")
+                tz_name = ("GMT")
             else:
                 tz_label = babel.dates.get_timezone_location(
                     tz, locale=babel_locale)
                 # Translators:  UTC offset and timezone label
-                tz_name = _("%(offset)s: %(label)s") % {"offset": utc_offset,
+                tz_name = ("%(offset)s: %(label)s") % {"offset": utc_offset,
                                                         "label": tz_label}
             timezones.append((tz, tz_name))
 
         self.fields['timezone'].choices = timezones
 
-        # When we define a help_text using any variable together with
-        # form field, traslation does not work well.
-        # To avoid this, we define here. (#1563021)
-        self.fields['pagesize'].help_text = (
-            _("Number of items to show per page (applies to the pages "
-              "that have API supported pagination, Max Value: %s)")
-            % self.max_value)
-
     def handle(self, request, data):
         response = shortcuts.redirect(request.build_absolute_uri())
-
+        # Language
         lang_code = data['language']
         if lang_code and translation.check_for_language(lang_code):
-            response = functions.save_config_value(
-                request, response, settings.LANGUAGE_COOKIE_NAME, lang_code)
+            if hasattr(request, 'session'):
+                request.session['django_language'] = lang_code
+            response.set_cookie(settings.LANGUAGE_COOKIE_NAME, lang_code,
+                                expires=_one_year())
 
-        response = functions.save_config_value(
-            request, response, 'django_timezone',
-            pytz.timezone(data['timezone']).zone)
+        # Timezone
+        request.session['django_timezone'] = pytz.timezone(
+            data['timezone']).zone
+        response.set_cookie('django_timezone', data['timezone'],
+                            expires=_one_year())
 
-        response = functions.save_config_value(
-            request, response, 'API_RESULT_PAGE_SIZE', data['pagesize'])
-
-        response = functions.save_config_value(
-            request, response, 'INSTANCE_LOG_LENGTH',
-            data['instance_log_length'])
+        request.session['horizon_pagesize'] = data['pagesize']
+        response.set_cookie('horizon_pagesize', data['pagesize'],
+                            expires=_one_year())
 
         with translation.override(lang_code):
             messages.success(request,
-                             encoding.force_text(_("Settings saved.")))
+                             encoding.force_text(("Settings saved.")))
 
         return response

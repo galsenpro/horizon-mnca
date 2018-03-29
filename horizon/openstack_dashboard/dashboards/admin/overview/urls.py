@@ -17,11 +17,13 @@
 #    under the License.
 
 
+from django.conf.urls import patterns
 from django.conf.urls import url
 
 from openstack_dashboard.dashboards.admin.overview import views
 
 
-urlpatterns = [
+urlpatterns = patterns(
+    '',
     url(r'^$', views.GlobalOverview.as_view(), name='index'),
-]
+)

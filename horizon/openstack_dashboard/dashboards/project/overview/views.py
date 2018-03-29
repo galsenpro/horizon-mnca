@@ -17,43 +17,35 @@
 #    under the License.
 
 
-from django.template.defaultfilters import capfirst
-from django.template.defaultfilters import floatformat
+from django.template.defaultfilters import capfirst  # noqa
+from django.template.defaultfilters import floatformat  # noqa
 from django.utils.translation import ugettext_lazy as _
+from django.views.generic import TemplateView  # noqa
 
 from horizon.utils import csvbase
-from horizon import views
 
 from openstack_dashboard import usage
-
-from openstack_dashboard.dashboards.project.instances \
-    import tables as project_tables
-
-from openstack_dashboard.utils import filters
 
 
 class ProjectUsageCsvRenderer(csvbase.BaseCsvResponse):
 
     columns = [_("Instance Name"), _("VCPUs"), _("RAM (MB)"),
                _("Disk (GB)"), _("Usage (Hours)"),
-               _("Time since created (Seconds)"), _("State")]
+               _("Uptime (Seconds)"), _("State")]
 
     def get_row_data(self):
 
-        choices = project_tables.STATUS_DISPLAY_CHOICES
         for inst in self.context['usage'].get_instances():
-            state_label = (
-                filters.get_display_label(choices, inst['state']))
             yield (inst['name'],
                    inst['vcpus'],
                    inst['memory_mb'],
                    inst['local_gb'],
                    floatformat(inst['hours'], 2),
                    inst['uptime'],
-                   capfirst(state_label))
+                   capfirst(inst['state']))
 
 
-class ProjectOverview(usage.ProjectUsageView):
+class ProjectOverview(usage.UsageView):
     table_class = usage.ProjectUsageTable
     usage_class = usage.ProjectUsage
     template_name = 'project/overview/usage.html'
@@ -64,5 +56,5 @@ class ProjectOverview(usage.ProjectUsageView):
         return self.usage.get_instances()
 
 
-class WarningView(views.HorizonTemplateView):
+class WarningView(TemplateView):
     template_name = "project/_warning.html"

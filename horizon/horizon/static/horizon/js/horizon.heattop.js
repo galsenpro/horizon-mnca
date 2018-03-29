@@ -1,18 +1,4 @@
 /**
- * Licensed under the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License. You may obtain
- * a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations
- * under the License.
- */
-
-/**
  *
  * HeatTop JS Framework
  * Dependencies: jQuery 1.7.1 or later, d3 v3 or later
@@ -35,14 +21,6 @@
  */
 
 var container = "#heat_resource_topology";
-
-/* NOTE: The structure/architecture of this file (lots of global variables
- *       being referenced within stand-alone functions) means that
- *       "no-use-before-define" eslint warnings will be rampant.
- *       I don't believe there's any plan to overhaul this file, so let's not
- *       clutter up our eslint output with this file's singluar-but-repeated issue.
- */
-/* eslint-disable no-use-before-define */
 
 function update(){
   node = node.data(nodes, function(d) { return d.name; });
@@ -70,8 +48,9 @@ function update(){
   //Setup click action for all nodes
   node.on("mouseover", function(d) {
     $("#info_box").html(d.info_box);
+    current_info = d.name;
   });
-  node.on("mouseout", function() {
+  node.on("mouseout", function(d) {
     $("#info_box").html('');
   });
 
@@ -212,7 +191,7 @@ function ajax_poll(poll_time){
 
       //Check for updates and new nodes
       json.nodes.forEach(function(d){
-        var current_node = findNode(d.name);
+        current_node = findNode(d.name);
         //Check if node already exists
         if (current_node) {
           //Node already exists, just update it
@@ -264,12 +243,11 @@ function ajax_poll(poll_time){
   }, poll_time);
 }
 
-/* eslint-disable no-use-before-define */
 if ($(container).length){
   var width = $(container).width(),
     height = 500,
     stack_id = $("#stack_id").data("stack_id"),
-    ajax_url = WEBROOT + 'project/stacks/get_d3_data/' + stack_id + '/',
+    ajax_url = '/project/stacks/get_d3_data/' + stack_id + '/',
     graph = $("#d3_data").data("d3_data"),
     force = d3.layout.force()
       .nodes(graph.nodes)

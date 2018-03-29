@@ -13,25 +13,24 @@
 #    under the License.
 
 import copy
-from importlib import import_module
 import inspect
 import logging
 
 from django.core import urlresolvers
 from django import forms
-from django.forms.forms import NON_FIELD_ERRORS
+from django.forms.forms import NON_FIELD_ERRORS  # noqa
 from django import template
-from django.template.defaultfilters import linebreaks
-from django.template.defaultfilters import safe
-from django.template.defaultfilters import slugify
+from django.template.defaultfilters import linebreaks  # noqa
+from django.template.defaultfilters import safe  # noqa
+from django.template.defaultfilters import slugify  # noqa
 from django.utils.encoding import force_text
+from django.utils.importlib import import_module  # noqa
 from django.utils.translation import ugettext_lazy as _
-from openstack_auth import policy
 import six
 
 from horizon import base
 from horizon import exceptions
-from horizon.templatetags.horizon import has_permissions
+from horizon.templatetags.horizon import has_permissions  # noqa
 from horizon.utils import html
 
 
@@ -67,7 +66,6 @@ class ActionMetaclass(forms.forms.DeclarativeFieldsMetaclass):
         cls.name = getattr(opts, "name", name)
         cls.slug = getattr(opts, "slug", slugify(name))
         cls.permissions = getattr(opts, "permissions", ())
-        cls.policy_rules = getattr(opts, "policy_rules", ())
         cls.progress_message = getattr(opts,
                                        "progress_message",
                                        _("Processing..."))
@@ -76,14 +74,13 @@ class ActionMetaclass(forms.forms.DeclarativeFieldsMetaclass):
         return cls
 
 
-@six.python_2_unicode_compatible
 @six.add_metaclass(ActionMetaclass)
 class Action(forms.Form):
-    """An ``Action`` represents an atomic logical interaction with the system.
-
-    This is easier to understand with a conceptual example: in the context of
-    a "launch instance" workflow, actions would include "naming the instance",
-    "selecting an image", and ultimately "launching the instance".
+    """An ``Action`` represents an atomic logical interaction you can have with
+    the system. This is easier to understand with a conceptual example: in the
+    context of a "launch instance" workflow, actions would include "naming
+    the instance", "selecting an image", and ultimately "launching the
+    instance".
 
     Because ``Actions`` are always interactive, they always provide form
     controls, and thus inherit from Django's ``Form`` class. However, they
@@ -103,51 +100,29 @@ class Action(forms.Form):
 
     .. attribute:: name
 
-       The verbose name for this action. Defaults to the name of the class.
+        The verbose name for this action. Defaults to the name of the class.
 
     .. attribute:: slug
 
-       A semi-unique slug for this action. Defaults to the "slugified" name
-       of the class.
+        A semi-unique slug for this action. Defaults to the "slugified" name
+        of the class.
 
     .. attribute:: permissions
 
-       A list of permission names which this action requires in order to be
-       completed. Defaults to an empty list (``[]``).
-
-    .. attribute:: policy_rules
-
-       list of scope and rule tuples to do policy checks on, the
-       composition of which is (scope, rule)
-
-       * scope: service type managing the policy for action
-       * rule: string representing the action to be checked
-
-       for a policy that requires a single rule check::
-
-           policy_rules should look like
-               "(("compute", "compute:create_instance"),)"
-
-       for a policy that requires multiple rule checks::
-
-           rules should look like
-               "(("identity", "identity:list_users"),
-                 ("identity", "identity:list_roles"))"
-
-       where two service-rule clauses are OR-ed.
+        A list of permission names which this action requires in order to be
+        completed. Defaults to an empty list (``[]``).
 
     .. attribute:: help_text
 
-       A string of simple help text to be displayed alongside the Action's
-       fields.
+        A string of simple help text to be displayed alongside the Action's
+        fields.
 
     .. attribute:: help_text_template
 
-       A path to a template which contains more complex help text to be
-       displayed alongside the Action's fields. In conjunction with
-       :meth:`~horizon.workflows.Action.get_help_text` method you can
-       customize your help text template to display practically anything.
-
+        A path to a template which contains more complex help text to be
+        displayed alongside the Action's fields. In conjunction with
+        :meth:`~horizon.workflows.Action.get_help_text` method you can
+        customize your help text template to display practically anything.
     """
 
     def __init__(self, request, context, *args, **kwargs):
@@ -163,7 +138,7 @@ class Action(forms.Form):
         self._populate_choices(request, context)
         self.required_css_class = 'required'
 
-    def __str__(self):
+    def __unicode__(self):
         return force_text(self.name)
 
     def __repr__(self):
@@ -181,7 +156,8 @@ class Action(forms.Form):
         extra_context = extra_context or {}
         if self.help_text_template:
             tmpl = template.loader.get_template(self.help_text_template)
-            text += tmpl.render(extra_context, self.request)
+            context = template.RequestContext(self.request, extra_context)
+            text += tmpl.render(context)
         else:
             text += linebreaks(force_text(self.help_text))
         return safe(text)
@@ -191,10 +167,9 @@ class Action(forms.Form):
         self.errors[NON_FIELD_ERRORS] = self.error_class([message])
 
     def handle(self, request, context):
-        """Handles any requisite processing for this action.
-
-        The method should return either ``None`` or a dictionary of data
-        to be passed to :meth:`~horizon.workflows.Step.contribute`.
+        """Handles any requisite processing for this action. The method should
+        return either ``None`` or a dictionary of data to be passed to
+        :meth:`~horizon.workflows.Step.contribute`.
 
         Returns ``None`` by default, effectively making it a no-op.
         """
@@ -214,11 +189,9 @@ class MembershipAction(Action):
         return self.slug + "_role_" + role_id
 
 
-@six.python_2_unicode_compatible
 class Step(object):
-    """A wrapper around an action which defines its context in a workflow.
-
-    It knows about details such as:
+    """A step is a wrapper around an action which defines its context in a
+    workflow. It knows about details such as:
 
     * The workflow's context data (data passed from step to step).
 
@@ -311,7 +284,7 @@ class Step(object):
     def __repr__(self):
         return "<%s: %s>" % (self.__class__.__name__, self.slug)
 
-    def __str__(self):
+    def __unicode__(self):
         return force_text(self.name)
 
     def __init__(self, workflow):
@@ -325,7 +298,6 @@ class Step(object):
         self.slug = self.action_class.slug
         self.name = self.action_class.name
         self.permissions = self.action_class.permissions
-        self.policy_rules = self.action_class.policy_rules
         self.has_errors = False
         self._handlers = {}
 
@@ -346,7 +318,7 @@ class Step(object):
                     # If it's callable we know the function exists and is valid
                     self._handlers[key].append(possible_handler)
                     continue
-                elif not isinstance(possible_handler, six.string_types):
+                elif not isinstance(possible_handler, basestring):
                     raise TypeError("Connection handlers must be either "
                                     "callables or strings.")
                 bits = possible_handler.split(".")
@@ -400,9 +372,8 @@ class Step(object):
         return self._action
 
     def prepare_action_context(self, request, context):
-        """Hook to customize how the workflow context is passed to the action.
-
-        This is the reverse of what "contribute" does to make the
+        """Allows for customization of how the workflow context is passed to
+        the action; this is the reverse of what "contribute" does to make the
         action outputs sane for the workflow. Changes to the context are not
         saved globally here. They are localized to the action.
 
@@ -432,9 +403,8 @@ class Step(object):
         return True
 
     def contribute(self, data, context):
-        """Adds the data listed in ``contributes`` to the workflow's context.
-
-        By default, the context is simply updated with all the data
+        """Adds the data listed in ``contributes`` to the workflow's shared
+        context. By default, the context is simply updated with all the data
         returned by the action.
 
         Note that even if the value of one of the ``contributes`` keys is
@@ -451,7 +421,8 @@ class Step(object):
         step_template = template.loader.get_template(self.template_name)
         extra_context = {"form": self.action,
                          "step": self}
-        return step_template.render(extra_context, self.workflow.request)
+        context = template.RequestContext(self.workflow.request, extra_context)
+        return step_template.render(context)
 
     def get_help_text(self):
         """Returns the help text for this step."""
@@ -466,16 +437,6 @@ class Step(object):
     def has_required_fields(self):
         """Returns True if action contains any required fields."""
         return any(field.required for field in self.action.fields.values())
-
-    def allowed(self, request):
-        """Determines whether or not the step is displayed.
-
-        Step instances can override this method to specify conditions under
-        which this tab should not be shown at all by returning ``False``.
-
-        The default behavior is to return ``True`` for all cases.
-        """
-        return True
 
 
 class WorkflowMetaclass(type):
@@ -523,13 +484,11 @@ class UpdateMembersStep(Step):
             return self.slug + "_role_" + role_id
 
 
-@six.python_2_unicode_compatible
 @six.add_metaclass(WorkflowMetaclass)
 class Workflow(html.HTMLElement):
-    """A Workflow is a collection of Steps.
-
-    Its interface is very straightforward, but it is responsible for handling
-    some very important tasks such as:
+    """A Workflow is a collection of Steps. Its interface is very
+    straightforward, but it is responsible for handling some very
+    important tasks such as:
 
     * Handling the injection, removal, and ordering of arbitrary steps.
 
@@ -621,6 +580,13 @@ class Workflow(html.HTMLElement):
         Whether to present the workflow as a wizard, with "prev" and "next"
         buttons and validation after every step.
 
+    .. attribute:: fullscreen
+
+        If the workflow is presented in a modal, and this attribute is
+        set to True, then the ``fullscreen`` css class will be added so
+        the modal can take advantage of the available screen estate.
+        Defaults to ``False``.
+
     """
     slug = None
     default_steps = ()
@@ -631,9 +597,10 @@ class Workflow(html.HTMLElement):
     redirect_param_name = "next"
     multipart = False
     wizard = False
+    fullscreen = False
     _registerable_class = Step
 
-    def __str__(self):
+    def __unicode__(self):
         return self.name
 
     def __repr__(self):
@@ -703,13 +670,10 @@ class Workflow(html.HTMLElement):
         for default_step in self.default_steps:
             self.register(default_step)
             self._registry[default_step] = default_step(self)
-        self._ordered_steps = []
-        for step_class in ordered_step_classes:
-            cls = self._registry[step_class]
-            if (has_permissions(self.request.user, cls) and
-                    policy.check(cls.policy_rules, self.request) and
-                    cls.allowed(self.request)):
-                self._ordered_steps.append(cls)
+        self._ordered_steps = [self._registry[step_class]
+                               for step_class in ordered_step_classes
+                               if has_permissions(self.request.user,
+                                                  self._registry[step_class])]
 
     def _order_steps(self):
         steps = list(copy.copy(self.default_steps))
@@ -780,7 +744,8 @@ class Workflow(html.HTMLElement):
 
     @classmethod
     def unregister(cls, step_class):
-        """Unregisters a :class:`~horizon.workflows.Step` from the workflow."""
+        """Unregisters a :class:`~horizon.workflows.Step` from the workflow.
+        """
         try:
             cls._cls_registry.remove(step_class)
         except KeyError:
@@ -788,17 +753,14 @@ class Workflow(html.HTMLElement):
         return cls._unregister(step_class)
 
     def validate(self, context):
-        """Hook for custom context data validation.
-
-        Should return a booleanvalue or
-        raise :class:`~horizon.exceptions.WorkflowValidationError`.
+        """Hook for custom context data validation. Should return a boolean
+        value or raise :class:`~horizon.exceptions.WorkflowValidationError`.
         """
         return True
 
     def is_valid(self):
-        """Verifies that all required data is present in the context.
-
-        It also calls the ``validate`` method to allow for finer-grained checks
+        """Verified that all required data is present in the context and
+        calls the ``validate`` method to allow for finer-grained checks
         on the context data.
         """
         missing = self.depends_on - set(self.context.keys())
@@ -819,12 +781,10 @@ class Workflow(html.HTMLElement):
         return self.validate(self.context)
 
     def finalize(self):
-        """Finalizes a workflow by running through all the actions.
-
-        It runs all the actions in order and calling their ``handle`` methods.
-        Returns ``True`` on full success, or ``False`` for a partial success,
-        e.g. there were non-critical errors.
-        (If it failed completely the function wouldn't return.)
+        """Finalizes a workflow by running through all the actions in order
+        and calling their ``handle`` methods. Returns ``True`` on full success,
+        or ``False`` for a partial success, e.g. there were non-critical
+        errors. (If it failed completely the function wouldn't return.)
         """
         partial = False
         for step in self.steps:
@@ -844,18 +804,16 @@ class Workflow(html.HTMLElement):
         return not partial
 
     def handle(self, request, context):
-        """Handles any final processing for this workflow.
-
-        Should return a boolean value indicating success.
+        """Handles any final processing for this workflow. Should return a
+        boolean value indicating success.
         """
         return True
 
     def get_success_url(self):
-        """Returns a URL to redirect the user to upon completion.
-
-        By default it will attempt to parse a ``success_url`` attribute on the
-        workflow, which can take the form of a reversible URL pattern name,
-        or a standard HTTP URL.
+        """Returns a URL to redirect the user to upon completion. By default it
+        will attempt to parse a ``success_url`` attribute on the workflow,
+        which can take the form of a reversible URL pattern name, or a
+        standard HTTP URL.
         """
         try:
             return urlresolvers.reverse(self.success_url)
@@ -863,10 +821,8 @@ class Workflow(html.HTMLElement):
             return self.success_url
 
     def format_status_message(self, message):
-        """Hook to allow customization of the message returned to the user.
-
-        This is called upon both successful or unsuccessful completion of
-        the workflow.
+        """Hook to allow customization of the message returned to the user
+        upon successful or unsuccessful completion of the workflow.
 
         By default it simply inserts the workflow's name into the message
         string.
@@ -876,20 +832,14 @@ class Workflow(html.HTMLElement):
         else:
             return message
 
-    def verify_integrity(self):
-        provided_keys = self.contributions | set(self.context_seed.keys())
-        if len(self.depends_on - provided_keys):
-            raise exceptions.NotAvailable(
-                _("The current user has insufficient permission to complete "
-                  "the requested task."))
-
     def render(self):
         """Renders the workflow."""
         workflow_template = template.loader.get_template(self.template_name)
         extra_context = {"workflow": self}
         if self.request.is_ajax():
             extra_context['modal'] = True
-        return workflow_template.render(extra_context, self.request)
+        context = template.RequestContext(self.request, extra_context)
+        return workflow_template.render(context)
 
     def get_absolute_url(self):
         """Returns the canonical URL for this workflow.
@@ -904,13 +854,10 @@ class Workflow(html.HTMLElement):
         return self.request.get_full_path().partition('?')[0]
 
     def add_error_to_step(self, message, slug):
-        """Adds an error message to the workflow's Step.
-
-        This is useful when you wish for API errors to appear as errors
-        on the form rather than using the messages framework.
-
-        The workflow's Step is specified by its slug.
-
+        """Adds an error to the workflow's Step with the
+        specified slug based on API issues. This is useful
+        when you wish for API errors to appear as errors on
+        the form rather than using the messages framework.
         """
         step = self.get_step(slug)
         if step:

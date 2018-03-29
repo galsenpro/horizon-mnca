@@ -10,12 +10,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import mock
+import json
 
 from django.core.urlresolvers import reverse
 from django import http
-from django.utils import html
-from mox3.mox import IsA
+from mox import IsA  # noqa
 
 from openstack_dashboard import api
 from openstack_dashboard.dashboards.admin.aggregates import constants
@@ -79,12 +78,10 @@ class CreateAggregateWorkflowTests(BaseAggregateWorkflowTests):
     @test.create_stubs({api.nova: ('host_list', 'aggregate_details_list',
                                    'aggregate_create'), })
     def _test_generic_create_aggregate(self, workflow_data, aggregate,
-                                       existing_aggregates=(),
                                        error_count=0,
                                        expected_error_message=None):
         api.nova.host_list(IsA(http.HttpRequest)).AndReturn(self.hosts.list())
-        api.nova.aggregate_details_list(IsA(http.HttpRequest)) \
-            .AndReturn(existing_aggregates)
+        api.nova.aggregate_details_list(IsA(http.HttpRequest)).AndReturn([])
         if not expected_error_message:
             api.nova.aggregate_create(
                 IsA(http.HttpRequest),
@@ -114,31 +111,8 @@ class CreateAggregateWorkflowTests(BaseAggregateWorkflowTests):
         workflow_data = self._get_create_workflow_data(aggregate)
         workflow_data['name'] = ''
         workflow_data['availability_zone'] = ''
-        self._test_generic_create_aggregate(workflow_data, aggregate, (), 1,
+        self._test_generic_create_aggregate(workflow_data, aggregate, 2,
                                             u'This field is required')
-
-    def test_create_aggregate_fails_missing_fields_existing_aggregates(self):
-        aggregate = self.aggregates.first()
-        existing_aggregates = self.aggregates.list()
-        workflow_data = self._get_create_workflow_data(aggregate)
-        workflow_data['name'] = ''
-        workflow_data['availability_zone'] = ''
-
-        self._test_generic_create_aggregate(workflow_data, aggregate,
-                                            existing_aggregates, 1,
-                                            u'This field is required')
-
-    def test_create_aggregate_fails_duplicated_name(self):
-        aggregate = self.aggregates.first()
-        existing_aggregates = self.aggregates.list()
-        workflow_data = self._get_create_workflow_data(aggregate)
-        expected_error_message = html \
-            .escape(u'The name "%s" is already used by another host aggregate.'
-                    % aggregate.name)
-
-        self._test_generic_create_aggregate(workflow_data, aggregate,
-                                            existing_aggregates, 1,
-                                            expected_error_message)
 
     @test.create_stubs({api.nova: ('host_list',
                                    'aggregate_details_list',
@@ -202,20 +176,8 @@ class CreateAggregateWorkflowTests(BaseAggregateWorkflowTests):
 
 class AggregatesViewTests(test.BaseAdminViewTests):
 
-    @mock.patch('openstack_dashboard.api.nova.extension_supported',
-                mock.Mock(return_value=False))
-    @test.create_stubs({api.keystone: ('tenant_list',)})
-    def test_panel_not_available(self):
-        api.keystone.tenant_list(IsA(http.HttpRequest)) \
-            .AndReturn(self.tenants.list())
-        self.mox.ReplayAll()
-
-        self.patchers['aggregates'].stop()
-        res = self.client.get(reverse('horizon:admin:overview:index'))
-        self.assertNotIn(b'Host Aggregates', res.content)
-
     @test.create_stubs({api.nova: ('aggregate_details_list',
-                                   'availability_zone_list',)})
+                                   'availability_zone_list',), })
     def test_index(self):
         api.nova.aggregate_details_list(IsA(http.HttpRequest)) \
                 .AndReturn(self.aggregates.list())
@@ -267,7 +229,7 @@ class AggregatesViewTests(test.BaseAdminViewTests):
         aggregate = self.aggregates.first()
         form_data = {'id': aggregate.id}
 
-        self._test_generic_update_aggregate(form_data, aggregate, 1,
+        self._test_generic_update_aggregate(form_data, aggregate, 2,
                                             u'This field is required')
 
 
@@ -473,3 +435,82 @@ class ManageHostsTests(test.BaseAdminViewTests):
                                        form_data,
                                        addAggregate=False,
                                        cleanAggregates=True)
+
+
+class HostAggregateMetadataTests(test.BaseAdminViewTests):
+
+    @test.create_stubs({api.nova: ('aggregate_get',),
+                        api.glance: ('metadefs_namespace_list',
+                                     'metadefs_namespace_get')})
+    def test_host_aggregate_metadata_get(self):
+        aggregate = self.aggregates.first()
+        api.nova.aggregate_get(
+            IsA(http.HttpRequest),
+            str(aggregate.id)
+        ).AndReturn(aggregate)
+
+        namespaces = self.metadata_defs.list()
+
+        api.glance.metadefs_namespace_list(
+            IsA(http.HttpRequest),
+            filters={'resource_types': ['OS::Nova::Aggregate']}
+        ).AndReturn((namespaces, False, False))
+
+        for namespace in namespaces:
+            api.glance.metadefs_namespace_get(
+                IsA(http.HttpRequest),
+                namespace.namespace,
+                'OS::Nova::Aggregate'
+            ).AndReturn(namespace)
+
+        self.mox.ReplayAll()
+
+        res = self.client.get(
+            reverse(constants.AGGREGATES_UPDATE_METADATA_URL,
+                    args=[aggregate.id]))
+
+        self.assertEqual(res.status_code, 200)
+        self.assertTemplateUsed(
+            res,
+            constants.AGGREGATES_UPDATE_METADATA_TEMPLATE
+        )
+        self.assertTemplateUsed(
+            res,
+            constants.AGGREGATES_UPDATE_METADATA_SUBTEMPLATE
+        )
+        self.assertContains(res, 'namespace_1')
+        self.assertContains(res, 'namespace_2')
+        self.assertContains(res, 'namespace_3')
+        self.assertContains(res, 'namespace_4')
+
+    @test.create_stubs({api.nova: ('aggregate_get', 'aggregate_set_metadata')})
+    def test_host_aggregate_metadata_update(self):
+        aggregate = self.aggregates.first()
+        aggregate.metadata = {'key': 'test_key', 'value': 'test_value'}
+
+        api.nova.aggregate_get(
+            IsA(http.HttpRequest),
+            str(aggregate.id)
+        ).AndReturn(aggregate)
+
+        api.nova.aggregate_set_metadata(
+            IsA(http.HttpRequest),
+            str(aggregate.id),
+            {'value': None, 'key': None, 'test_key': 'test_value'}
+        ).AndReturn(None)
+
+        self.mox.ReplayAll()
+
+        form_data = {"metadata": json.dumps([aggregate.metadata])}
+
+        res = self.client.post(
+            reverse(constants.AGGREGATES_UPDATE_METADATA_URL,
+                    args=(aggregate.id,)), form_data)
+
+        self.assertEqual(res.status_code, 302)
+        self.assertNoFormErrors(res)
+        self.assertMessageCount(success=1)
+        self.assertRedirectsNoFollow(
+            res,
+            reverse(constants.AGGREGATES_INDEX_URL)
+        )

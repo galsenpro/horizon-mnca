@@ -1,32 +1,15 @@
-/**
- * Licensed under the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License. You may obtain
- * a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations
- * under the License.
- */
-
-/* global Rickshaw */
 /*
   Draw line chart in d3.
 
   To use, a div is required with the data attributes
-  data-chart-type="line_chart", data-data.
+  data-chart-type="line_chart", data-url.
 
   data-chart-type - REQUIRED(string) must be "line_chart" so chart gets initialized
-  data-data - REQUIRED(string or json):
-    string: url for the json data for the chart
-    json: json stringified object for the chart data
-  data-form-selector - Optional(string) jQuery selector of Forms that controls this chart
-  data-legend-selector - Optional(string) jQuery selector of div element that will display legend
-  data-smoother-selector - Optional(string) jQuery selector of TODO(lsmola)
-  data-slider-selector - Optional(string) jQuery selector of TODO(lsmola)
+  data-url - REQUIRED(string) url for the json data for the chart
+  data-form-selector - Optional(string) JQuery selector of Forms that controls this chart
+  data-legend-selector - Optional(string) JQuery selector of div element that will display legend
+  data-smoother-selector - Optional(string) JQuery selector of TODO(lsmola)
+  data-slider-selector - Optional(string) JQuery selector of TODO(lsmola)
 
 
   If used in popup, initialization must be made manually e.g.:
@@ -39,12 +22,12 @@
   Example:
   <div id="line_chart"
     data-chart-type="line_chart"
-    data-data="{% url 'horizon:admin:metering:samples'%}"
+    data-url="{% url 'horizon:admin:metering:samples'%}"
     data-form-selector='#linechart_general_form'>
   </div>
   <div id="linea_chart2"
     data-chart-type="line_chart"
-    data-data="{% url 'horizon:admin:metering:samples'%}?query=not_popular_data"
+    data-url="{% url 'horizon:admin:metering:samples'%}?query=not_popular_data"
     data-form-selector='#linechart_general_form'>
   </div>
 
@@ -57,13 +40,13 @@
         "name": "instance-00000005",
         "data": [
           {"y": 171, "x": "2013-08-21T11:22:25"},
-          {"y": 172, "x": "2013-08-21T11:22:26"}
+          {"y": 171, "x": "2013-08-21T11:22:25"}
         ]
       }, {
-        "name": "instance-00000006",
+        "name": "instance-00000005",
         "data": [
-          {"y": 161, "x": "2013-08-21T11:22:25"},
-          {"y": 162, "x": "2013-08-21T11:22:26"}
+          {"y": 171, "x": "2013-08-21T11:22:25"},
+          {"y": 171, "x": "2013-08-21T11:22:25"}
         ]
       }
     ],
@@ -76,7 +59,7 @@
     <div class="chart_container">
       <div class="chart"
         data-chart-type="line_chart"
-        data-data="/admin/samples?meter=test2"
+        data-url="/admin/samples?meter=test2"
         data-form-selector='#linechart_general_form'>
       </div>
     </div>
@@ -92,13 +75,13 @@
         "name": "instance-00000005",
         "data": [
           {"y": 171, "x": "2013-08-21T11:22:25"},
-          {"y": 172, "x": "2013-08-21T11:22:26"}
+          {"y": 171, "x": "2013-08-21T11:22:25"}
         ]
       }, {
-        "name": "instance-00000006",
+        "name": "instance-00000005",
         "data": [
-          {"y": 161, "x": "2013-08-21T11:22:25"},
-          {"y": 162, "x": "2013-08-21T11:22:26"}
+          {"y": 171, "x": "2013-08-21T11:22:25"},
+          {"y": 171, "x": "2013-08-21T11:22:25"}
         ]
       }
     ],
@@ -178,10 +161,10 @@
  */
 
 Rickshaw.namespace('Rickshaw.Graph.Renderer.StaticAxes');
-Rickshaw.Graph.Renderer.StaticAxes = Rickshaw.Class.create(Rickshaw.Graph.Renderer.Line, {
+Rickshaw.Graph.Renderer.StaticAxes = Rickshaw.Class.create( Rickshaw.Graph.Renderer.Line, {
   name: 'StaticAxes',
   defaults: function($super) {
-    return Rickshaw.extend($super(), {
+    return Rickshaw.extend( $super(), {
       xMin: undefined,
       xMax: undefined,
       yMin: undefined,
@@ -222,7 +205,6 @@ horizon.d3_line_chart = {
     self.chart_module = chart_module;
     self.html_element = html_element;
     self.jquery_element = jquery_element;
-    self.$spinner = horizon.loader.inline(gettext('Loading')).hide().appendTo(jquery_element);
 
     /************************************************************************/
     /*********************** Initialization methods *************************/
@@ -236,24 +218,22 @@ horizon.d3_line_chart = {
       self.legend_element = $(jquery_element.data('legend-selector')).get(0);
       self.slider_element = $(jquery_element.data('slider-selector')).get(0);
 
-      // Set the data, undefined if it doesn't exist
-      self.data = jquery_element.data('data');
+      self.url = jquery_element.data('url');
       self.url_parameters = jquery_element.data('url_parameters');
 
-      if (typeof self.data === 'string') {
-        self.final_url = self.data;
-        if (jquery_element.data('form-selector')){
-          $(jquery_element.data('form-selector')).each(function(){
-            // Add serialized data from all connected forms to url.
-            if (self.final_url.indexOf('?') > -1){
-              self.final_url += '&' + $(this).serialize();
-            } else {
-              self.final_url += '?' + $(this).serialize();
-            }
-          });
-        }
+      self.final_url = self.url;
+      if (jquery_element.data('form-selector')){
+        $(jquery_element.data('form-selector')).each(function(){
+          // Add serialized data from all connected forms to url.
+          if (self.final_url.indexOf('?') > -1){
+            self.final_url += '&' + $(this).serialize();
+          } else {
+            self.final_url += '?' + $(this).serialize();
+          }
+        });
       }
 
+      self.data = [];
       self.color = d3.scale.category10();
 
       // Self aggregation and statistic attrs
@@ -356,7 +336,7 @@ horizon.d3_line_chart = {
       svg.hide();
 
       /*
-        Width and height of the chart will be taken from chart wrapper,
+        Width an height of the chart will be taken from chart wrapper,
         that can be styled by css.
       */
       self.width = jquery_element.width();
@@ -389,47 +369,6 @@ horizon.d3_line_chart = {
     self.init();
 
     /************************************************************************/
-    /****************************** Error Message ***************************/
-    /************************************************************************/
-    // Load the data
-    self.error_message = function(error) {
-      $(self.html_element).html(error);
-      $(self.legend_element).empty();
-      // Setting a fix height breaks things when legend is getting
-      // bigger.
-      $(self.legend_element).css('height', '');
-      // FIXME add proper fail message
-      horizon.toast.add('error',
-        gettext('An error occurred. Please try again later.'));
-    };
-
-    /************************************************************************/
-    /******************************** Data Load *****************************/
-    /************************************************************************/
-    // Load the data
-    self.load_data = function(data) {
-
-      // Clearing the old chart data.
-      self.jquery_element.empty();
-      $(self.legend_element).empty();
-
-      self.series = data.series;
-      self.stats = data.stats;
-      // The highest priority settings are sent with the data.
-      self.apply_settings(data.settings);
-
-      if (self.series.length <= 0) {
-        $(self.html_element).html(gettext('No data available.'));
-        $(self.legend_element).empty();
-        // Setting a fix height breaks things when legend is getting
-        // bigger.
-        $(self.legend_element).css('height', '');
-      } else {
-        self.render();
-      }
-    };
-
-    /************************************************************************/
     /****************************** Methods *********************************/
     /************************************************************************/
     /**
@@ -439,25 +378,41 @@ horizon.d3_line_chart = {
       var self = this;
 
       self.start_loading();
-      if (typeof self.data === 'string') {
-        horizon.ajax.queue({
-          url: self.final_url,
-          success: function (data) {
-            self.load_data(data);
-          },
-          error: function () {
-            self.error_message(gettext('No data available.'));
-          },
-          complete: function () {
-            self.finish_loading();
+      horizon.ajax.queue({
+        url: self.final_url,
+        success: function (data, textStatus, jqXHR) {
+          // Clearing the old chart data.
+          self.jquery_element.empty();
+          $(self.legend_element).empty();
+
+          self.series = data.series;
+          self.stats = data.stats;
+          // The highest priority settings are sent with the data.
+          self.apply_settings(data.settings);
+
+          if (self.series.length <= 0) {
+            $(self.html_element).html(gettext('No data available.'));
+            $(self.legend_element).empty();
+            // Setting a fix height breaks things when legend is getting
+            // bigger.
+            $(self.legend_element).css('height', '');
+          } else {
+            self.render();
           }
-        });
-      } else if (self.data) {
-        self.load_data(self.data);
-        self.finish_loading();
-      } else {
-        self.error_message(gettext('No data available.'));
-      }
+        },
+        error: function (jqXHR, textStatus, errorThrown) {
+          $(self.html_element).html(gettext('No data available.'));
+          $(self.legend_element).empty();
+          // Setting a fix height breaks things when legend is getting
+          // bigger.
+          $(self.legend_element).css('height', '');
+          // FIXME add proper fail message
+          horizon.alert('error', gettext('An error occurred. Please try again later.'));
+        },
+        complete: function (jqXHR, textStatus) {
+          self.finish_loading();
+        }
+      });
     };
 
     /**
@@ -508,7 +463,7 @@ horizon.d3_line_chart = {
       });
 
       /*
-        TODO(lsmola) add jQuery UI slider to make this work
+        TODO(lsmola) add JQuery UI slider to make this work
         if (self.slider_element) {
           var slider = new Rickshaw.Graph.RangeSlider({
             graph: graph,
@@ -519,15 +474,9 @@ horizon.d3_line_chart = {
       graph.render();
 
       if (self.hover_formatter === 'verbose'){
-        new Rickshaw.Graph.HoverDetail({
+        var hoverDetail = new Rickshaw.Graph.HoverDetail({
           graph: graph,
           formatter: function(series, x, y) {
-            if(y % 1 === 0) {
-              y = parseInt(y, 10);
-            } else {
-              y = parseFloat(y).toFixed(2);
-            }
-
             var d = new Date(x * 1000);
             // Convert datetime to YYYY-MM-DD HH:MM:SS GMT
             var datetime_string = d.getUTCFullYear() + "-" +
@@ -539,7 +488,8 @@ horizon.d3_line_chart = {
 
             var date = '<span class="date">' + datetime_string + '</span>';
             var swatch = '<span class="detail_swatch" style="background-color: ' + series.color + '"></span>';
-            return swatch + series.name + ': ' + y + ' ' + series.unit + '<br>' + date;
+            var content = swatch + series.name + ': ' + parseFloat(y).toFixed(2) + ' ' + series.unit + '<br>' + date;
+            return content;
           }
         });
       }
@@ -550,17 +500,17 @@ horizon.d3_line_chart = {
           element:  self.legend_element
         });
 
-        new Rickshaw.Graph.Behavior.Series.Toggle({
+        var shelving = new Rickshaw.Graph.Behavior.Series.Toggle({
           graph: graph,
           legend: legend
         });
 
-        new Rickshaw.Graph.Behavior.Series.Order({
+        var order = new Rickshaw.Graph.Behavior.Series.Order({
           graph: graph,
           legend: legend
         });
 
-        new Rickshaw.Graph.Behavior.Series.Highlight({
+        var highlighter = new Rickshaw.Graph.Behavior.Series.Highlight({
           graph: graph,
           legend: legend
         });
@@ -577,7 +527,7 @@ horizon.d3_line_chart = {
         };
         if (!self.settings.axes_y_label){
           // hiding label of Y axis if setting is set to false
-          axes_y_settings.tickFormat = (function () { return ''; });
+          axes_y_settings.tickFormat = (function (d) { return ''; });
         }
         var axes_y = new Rickshaw.Graph.Axis.Y(axes_y_settings);
         axes_y.render();
@@ -622,17 +572,34 @@ horizon.d3_line_chart = {
     self.start_loading = function () {
       var self = this;
 
-      $(self.html_element).addClass('has-spinner');
-      self.$spinner.show();
+      /* Find and remove backdrops and spinners that could be already there.*/
+      $(self.html_element).find('.modal-backdrop').remove();
+      $(self.html_element).find('.spinner_wrapper').remove();
+
+      // Display the backdrop that will be over the chart.
+      self.backdrop = $('<div class="modal-backdrop"></div>');
+      self.backdrop.css('width', self.width).css('height', self.height);
+      $(self.html_element).append(self.backdrop);
 
       // Hide the legend.
       $(self.legend_element).empty().addClass('disabled');
 
+      // Show the spinner.
+      self.spinner = $('<div class="spinner_wrapper"></div>');
+      $(self.html_element).append(self.spinner);
       /*
         TODO(lsmola) a loader for in-line tables spark-lines has to be
         prepared, the parameters of loader could be sent in settings.
       */
+      self.spinner.spin(horizon.conf.spinner_options.line_chart);
 
+      // Center the spinner considering the size of the spinner.
+      var radius = horizon.conf.spinner_options.line_chart.radius;
+      var length = horizon.conf.spinner_options.line_chart.length;
+      var spinner_size = radius + length;
+      var top = (self.height / 2) - spinner_size / 2;
+      var left = (self.width / 2) - spinner_size / 2;
+      self.spinner.css('top', top).css('left', left);
     };
 
     /**
@@ -643,8 +610,6 @@ horizon.d3_line_chart = {
       var self = this;
       // Showing the legend.
       $(self.legend_element).removeClass('disabled');
-      $(self.html_element).removeClass('has-spinner');
-      self.$spinner.hide();
     };
   },
 
@@ -653,7 +618,7 @@ horizon.d3_line_chart = {
    * If settings['auto_resize'] is true, the chart will be refreshed when
    * the size of the window is changed. This option made only sense when
    * the size of the chart and its wrapper is not static.
-   * @param selector jQuery selector of charts we want to initialize.
+   * @param selector JQuery selector of charts we want to initialize.
    * @param settings An object containing settings of the chart.
    */
   init: function(selector, settings) {
@@ -715,7 +680,7 @@ horizon.d3_line_chart = {
    * timespan or various parameters we want to show in the chart. The
    * charts will be refreshed immediately after the form element connected
    * to them is changed.
-   * @param selector jQuery selector of charts we are initializing.
+   * @param selector JQuery selector of charts we are initializing.
    * @param settings An object containing settings of the chart.
    */
   bind_commands: function (selector, settings){
@@ -726,12 +691,12 @@ horizon.d3_line_chart = {
 
     /**
      * Connecting forms to charts it controls. Each chart contains
-     * jQuery selector data-form-selector, which defines by which
+     * JQuery selector data-form-selector, which defines by which
      * html Forms is a particular chart controlled. This information
      * has to be projected to forms. So when form input is changed,
      * all connected charts are refreshed.
      */
-    var connect_forms_to_charts = function(){
+    connect_forms_to_charts = function(){
       $(selector).each(function() {
         var chart = $(this);
         $(chart.data('form-selector')).each(function(){
@@ -750,11 +715,11 @@ horizon.d3_line_chart = {
     /**
      * A helper function for delegating form events to charts, causing their
      * refreshing.
-     * @param selector jQuery selector of charts we are initializing.
+     * @param selector JQuery selector of charts we are initializing.
      * @param event_name Event name we want to delegate.
      * @param settings An object containing settings of the chart.
      */
-    var delegate_event_and_refresh_charts = function(selector, event_name, settings) {
+    delegate_event_and_refresh_charts = function(selector, event_name, settings) {
       $('form').delegate(selector, event_name, function() {
         /*
           Registering 'any event' on form element by delegating. This way it
@@ -777,7 +742,7 @@ horizon.d3_line_chart = {
      * A helper function for catching change event of form selectboxes
      * connected to charts.
      */
-    var bind_select_box_change = function(settings) {
+    bind_select_box_change = function(settings) {
       delegate_event_and_refresh_charts(select_box_selector, 'change', settings);
     };
 
@@ -785,8 +750,15 @@ horizon.d3_line_chart = {
      * A helper function for catching changeDate event of form datepickers
      * connected to charts.
      */
-    var bind_datepicker_change = function(settings) {
-      horizon.datepickers.add(datepicker_selector);
+    bind_datepicker_change = function(settings) {
+      var now = new Date();
+
+      $(datepicker_selector).each(function() {
+        var el = $(this);
+        el.datepicker({format: 'yyyy-mm-dd',
+          setDate: new Date(),
+          showButtonPanel: true});
+      });
       delegate_event_and_refresh_charts(datepicker_selector, 'changeDate', settings);
     };
 

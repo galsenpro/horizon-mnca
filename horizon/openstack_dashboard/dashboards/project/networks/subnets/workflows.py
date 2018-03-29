@@ -32,15 +32,13 @@ LOG = logging.getLogger(__name__)
 class CreateSubnetInfoAction(network_workflows.CreateSubnetInfoAction):
     with_subnet = forms.BooleanField(initial=True, required=False,
                                      widget=forms.HiddenInput())
+    msg = _('Specify "Network Address"')
 
-    def __init__(self, request, *args, **kwargs):
-        super(CreateSubnetInfoAction, self).__init__(request, *args, **kwargs)
-
-    class Meta(object):
+    class Meta:
         name = _("Subnet")
         help_text = _('Create a subnet associated with the network. '
                       'Advanced configuration is available by clicking on the '
-                      '"Subnet Details" tab.')
+                      '"Subnet Detail" tab.')
 
     def clean(self):
         cleaned_data = workflows.Action.clean(self)
@@ -80,12 +78,6 @@ class CreateSubnet(network_workflows.CreateNetwork):
 
 
 class UpdateSubnetInfoAction(CreateSubnetInfoAction):
-    address_source = forms.ThemableChoiceField(widget=forms.HiddenInput(),
-                                               required=False)
-    subnetpool = forms.ThemableChoiceField(widget=forms.HiddenInput(),
-                                           required=False)
-    prefixlen = forms.ThemableChoiceField(widget=forms.HiddenInput(),
-                                          required=False)
     cidr = forms.IPField(label=_("Network Address"),
                          required=False,
                          initial="",
@@ -103,15 +95,28 @@ class UpdateSubnetInfoAction(CreateSubnetInfoAction):
     # when re-POST since the value of the ChoiceField is not set.
     # Thus now I use HiddenInput for the ip_version ChoiceField as a work
     # around.
-    ip_version = forms.ThemableChoiceField(choices=[(4, 'IPv4'), (6, 'IPv6')],
-                                           widget=forms.HiddenInput(),
-                                           label=_("IP Version"))
+    ip_version = forms.ChoiceField(choices=[(4, 'IPv4'), (6, 'IPv6')],
+                                   widget=forms.HiddenInput(),
+                                   label=_("IP Version"))
 
-    class Meta(object):
+    gateway_ip = forms.IPField(
+        label=_("Gateway IP (optional)"),
+        required=False,
+        initial="",
+        help_text=_("IP address of Gateway (e.g. 192.168.0.254). "
+                    "Specify an explicit address to set the gateway. "
+                    "If you do not want to use a gateway, "
+                    "check 'Disable Gateway' below."),
+        version=forms.IPv4 | forms.IPv6,
+        mask=False)
+    no_gateway = forms.BooleanField(label=_("Disable Gateway"),
+                                    initial=False, required=False)
+
+    class Meta:
         name = _("Subnet")
         help_text = _('Update a subnet associated with the network. '
                       'Advanced configuration are available at '
-                      '"Subnet Details" tab.')
+                      '"Subnet Detail" tab.')
 
     def clean(self):
         cleaned_data = workflows.Action.clean(self)
@@ -125,6 +130,8 @@ class UpdateSubnetInfo(CreateSubnetInfo):
 
 
 class UpdateSubnetDetailAction(network_workflows.CreateSubnetDetailAction):
+    allocation_pools = forms.CharField(widget=forms.HiddenInput(),
+                                       required=False)
 
     def __init__(self, request, context, *args, **kwargs):
         super(UpdateSubnetDetailAction, self).__init__(request, context,
@@ -139,8 +146,8 @@ class UpdateSubnetDetailAction(network_workflows.CreateSubnetDetailAction):
         self.fields['ipv6_modes'].widget = forms.HiddenInput()
         self.fields['ipv6_modes'].required = False
 
-    class Meta(object):
-        name = _("Subnet Details")
+    class Meta:
+        name = _("Subnet Detail")
         help_text = _('Specify additional attributes for the subnet.')
 
 
@@ -188,7 +195,8 @@ class UpdateSubnet(network_workflows.CreateNetwork):
             self._setup_subnet_parameters(params, data, is_create=False)
 
             subnet = api.neutron.subnet_update(request, subnet_id, **params)
-            LOG.debug('Subnet "%s" was successfully updated.', data['cidr'])
+            msg = _('Subnet "%s" was successfully updated.') % data['cidr']
+            LOG.debug(msg)
             return subnet
         except Exception as e:
             msg = (_('Failed to update subnet "%(sub)s": '

@@ -16,7 +16,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from django.conf import settings
 from django.core.urlresolvers import reverse
 from django.template import defaultfilters as filters
 from django.utils.http import urlencode
@@ -24,7 +23,6 @@ from django.utils.translation import ugettext_lazy as _
 from django.utils.translation import ungettext_lazy
 
 from horizon import tables
-from horizon.templatetags import sizeformat
 
 from openstack_dashboard import api
 
@@ -65,40 +63,13 @@ class UpdateFlavor(tables.LinkAction):
     classes = ("ajax-modal",)
     icon = "pencil"
 
-    def allowed(self, request, flavor):
-        return getattr(settings, 'ENABLE_FLAVOR_EDIT', False)
-
-    def get_link_url(self, flavor):
-        step = 'update_info'
-        base_url = reverse(self.url, args=[flavor.id])
-        param = urlencode({"step": step})
-        return "?".join([base_url, param])
-
 
 class UpdateMetadata(tables.LinkAction):
+    url = "horizon:admin:flavors:update_metadata"
     name = "update_metadata"
     verbose_name = _("Update Metadata")
-    ajax = False
+    classes = ("ajax-modal",)
     icon = "pencil"
-    attrs = {"ng-controller": "MetadataModalHelperController as modal"}
-
-    def __init__(self, **kwargs):
-        kwargs['preempt'] = True
-        super(UpdateMetadata, self).__init__(**kwargs)
-
-    def get_link_url(self, datum):
-        obj_id = self.table.get_object_id(datum)
-        self.attrs['ng-click'] = (
-            "modal.openMetadataModal('flavor', '%s', true)" % obj_id)
-        return "javascript:void(0);"
-
-
-class UpdateMetadataColumn(tables.Column):
-    def get_link_url(self, datum):
-        obj_id = self.table.get_object_id(datum)
-        self.link_attrs['ng-click'] = (
-            "modal.openMetadataModal('flavor', '%s', true)" % obj_id)
-        return "javascript:void(0);"
 
 
 class ModifyAccess(tables.LinkAction):
@@ -114,9 +85,6 @@ class ModifyAccess(tables.LinkAction):
         param = urlencode({"step": step})
         return "?".join([base_url, param])
 
-    def allowed(self, request, flavor=None):
-        return not flavor.is_public
-
 
 class FlavorFilterAction(tables.FilterAction):
     def filter(self, table, flavors, filter_string):
@@ -130,7 +98,7 @@ class FlavorFilterAction(tables.FilterAction):
 
 
 def get_size(flavor):
-    return sizeformat.mb_float_format(flavor.ram)
+    return _("%sMB") % flavor.ram
 
 
 def get_swap_size(flavor):
@@ -150,7 +118,7 @@ def get_extra_specs(flavor):
 
 
 class FlavorsTable(tables.DataTable):
-    name = tables.WrappingColumn('name', verbose_name=_('Flavor Name'))
+    name = tables.Column('name', verbose_name=_('Flavor Name'))
     vcpus = tables.Column('vcpus', verbose_name=_('VCPUs'))
     ram = tables.Column(get_size,
                         verbose_name=_('RAM'),
@@ -164,21 +132,19 @@ class FlavorsTable(tables.DataTable):
     swap = tables.Column(get_swap_size,
                          verbose_name=_('Swap Disk'),
                          attrs={'data-type': 'size'})
-    rxtx_factor = tables.Column('rxtx_factor', verbose_name=_("RX/TX factor"))
     flavor_id = tables.Column('id', verbose_name=_('ID'))
     public = tables.Column("is_public",
                            verbose_name=_("Public"),
                            empty_value=False,
                            filters=(filters.yesno, filters.capfirst))
-    extra_specs = UpdateMetadataColumn(
-        get_extra_specs,
-        verbose_name=_("Metadata"),
-        link=True,
-        empty_value=False,
-        filters=(filters.yesno, filters.capfirst),
-        link_attrs={'ng-controller': 'MetadataModalHelperController as modal'})
+    extra_specs = tables.Column(get_extra_specs,
+                                verbose_name=_("Metadata"),
+                                link="horizon:admin:flavors:update_metadata",
+                                link_classes=("ajax-modal",),
+                                empty_value=False,
+                                filters=(filters.yesno, filters.capfirst))
 
-    class Meta(object):
+    class Meta:
         name = "flavors"
         verbose_name = _("Flavors")
         table_actions = (FlavorFilterAction, CreateFlavor, DeleteFlavor)

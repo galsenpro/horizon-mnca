@@ -1,17 +1,3 @@
-/**
- * Licensed under the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License. You may obtain
- * a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations
- * under the License.
- */
-
 /* Namespace for core functionality related to Membership Workflow Step. */
 horizon.membership = {
 
@@ -21,23 +7,12 @@ horizon.membership = {
   has_roles: [],
   default_role_id: [],
 
-  /* Parses the form field selector's ID to get the
-   * role id. It returns the string after the last underscore.
-   * (i.e. returns "id12345" when passed the selector with
-   * id: "id_group_id12345").
+  /* Parses the form field selector's ID to get either the
+   * role or user id (i.e. returns "id12345" when
+   * passed the selector with id: "id_group_id12345").
    **/
   get_field_id: function(id_string) {
     return id_string.slice(id_string.lastIndexOf("_") + 1);
-  },
-
-  /*
-   * Parses the form field selector's ID to get the member
-   * user id, which is usually right after the step slug.
-   * (i.e. returns "aa_bb" when passed the selector with
-   * id: "id_update_members_aa_bb").
-   **/
-  get_member_id: function(id_string, step_slug) {
-    return id_string.slice(id_string.indexOf(step_slug) + step_slug.length + 1);
   },
 
   /*
@@ -97,9 +72,10 @@ horizon.membership = {
   init_current_membership: function(step_slug) {
     horizon.membership.current_membership[step_slug] = [];
     var members_list = [];
-    var role_id, selected_members;
-    angular.forEach(this.get_role_element(step_slug, ''), function(value) {
+    var role_name, role_id, selected_members;
+    angular.forEach(this.get_role_element(step_slug, ''), function(value, key) {
       role_id = horizon.membership.get_field_id($(value).attr('id'));
+      role_name = $('label[for="id_' + step_slug + '_role_' + role_id + '"]').text();
 
       // get the array of members who are selected in this list
       selected_members = $(value).find("option:selected");
@@ -164,7 +140,7 @@ horizon.membership = {
       for (role in membership) {
         if (membership.hasOwnProperty(role)) {
           horizon.membership.remove_member(
-            step_slug, data_id, role, membership[role]
+            step_slug, data_id, role,  membership[role]
           );
         }
       }
@@ -203,9 +179,13 @@ horizon.membership = {
     var $roles_display = $dropdown.children('.dropdown-toggle').children('.roles_display');
     var roles_to_display = [];
     for (var i = 0; i < role_ids.length; i++) {
+      if (i === 2) {
+        roles_to_display.push('...');
+        break;
+      }
       roles_to_display.push(horizon.membership.roles[step_slug][role_ids[i]]);
     }
-    var text = roles_to_display.join(', ');
+    text = roles_to_display.join(', ');
     if (text.length === 0) {
       text = gettext('No roles');
     }
@@ -273,7 +253,7 @@ horizon.membership = {
     $(".available_" + step_slug + ", ." + step_slug + "_members").on('click', ".btn-group a[href='#add_remove']", function (evt) {
       evt.preventDefault();
       var available = $(".available_" + step_slug).has($(this)).length;
-      var data_id = horizon.membership.get_member_id($(this).parent().siblings().attr('data-' + step_slug + '-id'), step_slug);
+      var data_id = horizon.membership.get_field_id($(this).parent().siblings().attr('data-' + step_slug +  '-id'));
       var member_el = $(this).parent().parent();
 
       if (available) {
@@ -297,7 +277,9 @@ horizon.membership = {
       // update lists
       horizon.membership.list_filtering(step_slug);
       horizon.membership.detect_no_results(step_slug);
-      $("input." + step_slug + "_filter").trigger("keyup");
+
+      // remove input filters
+      $("input." + step_slug + "_filter").val("");
     });
   },
 
@@ -306,7 +288,7 @@ horizon.membership = {
    * displays a message to the user.
    **/
   detect_no_results: function (step_slug) {
-    $('.' + step_slug + '_filterable').each(function () {
+    $('.' + step_slug +  '_filterable').each( function () {
       var css_class = $(this).find('ul').attr('class');
       // Example value: members step_slug_members
       // Pick the class name that contains the step_slug
@@ -334,7 +316,7 @@ horizon.membership = {
       // get the newly selected role and the member's name
       var new_role_id = $(this).attr("data-role-id");
       var id_str = $(this).parent().parent().siblings(".member").attr("data-" + step_slug + "-id");
-      var data_id = horizon.membership.get_member_id(id_str, step_slug);
+      var data_id = horizon.membership.get_field_id(id_str);
       // update role lists
       if ($(this).hasClass('selected')) {
         $(this).removeClass('selected');
@@ -351,7 +333,7 @@ horizon.membership = {
    * Triggers on the addition of a new member via the inline object creation field.
    **/
   add_new_member: function(step_slug) {
-    $("select[id='id_new_" + step_slug + "']").on('change', function () {
+    $("select[id='id_new_" + step_slug + "']").on('change', function (evt) {
       // add the member to the visible list
       var display_name = $(this).find("option").text();
       var data_id = $(this).find("option").attr("value");
@@ -372,8 +354,8 @@ horizon.membership = {
       $("input.filter").val("");
 
       // fix styling
-      $("." + step_slug + "_members .btn-group").removeClass('last_stripe');
-      $("." + step_slug + "_members .btn-group:last").addClass('last_stripe');
+      $("." +  step_slug + "_members .btn-group").removeClass('last_stripe');
+      $("." +  step_slug + "_members .btn-group:last").addClass('last_stripe');
     });
   },
 
@@ -392,7 +374,7 @@ horizon.membership = {
    * Fixes the striping of the fake table upon modification of the lists.
    **/
   fix_stripes: function(step_slug) {
-    $('.fake_' + step_slug + '_table').each(function () {
+    $('.fake_' + step_slug + '_table').each( function () {
       var filter = "." + $(this).attr('id');
       var visible = " .btn-group:visible";
       var even = " .btn-group:visible:even";
@@ -442,7 +424,7 @@ horizon.membership = {
           horizon.membership.fix_stripes(step_slug);
         },
         'prepareQuery': function (val) {
-          return new RegExp(horizon.string.escapeRegex(val), "i");
+          return new RegExp(val, "i");
         },
         'testQuery': function (query, txt, span) {
           if ($(input).attr('id') === filter) {
@@ -460,7 +442,7 @@ horizon.membership = {
    * Calls set-up functions upon loading the workflow.
    **/
   workflow_init: function(modal, step_slug, step_id) {
-      $(modal).find('form').each(function () {
+      $(modal).find('form').each( function () {
       var $form = $(this);
 
       // Do nothing if this isn't a membership modal
@@ -477,7 +459,7 @@ horizon.membership = {
 
 
       // initially hide role dropdowns for available member list
-      $form.find(".available_" + step_slug + " .role_options").hide();
+      $form.find(".available_" +  step_slug + " .role_options").hide();
 
       // hide the dropdown for members too if we don't need to show it
       if (!horizon.membership.has_roles[step_slug]) {
@@ -503,7 +485,7 @@ horizon.membership = {
       horizon.membership.detect_no_results(step_slug);
 
       // fix initial striping of rows
-      $form.find('.fake_' + step_slug + '_table').each(function () {
+      $form.find('.fake_' + step_slug + '_table').each( function () {
         var filter = "." + $(this).attr('id');
         $(filter + ' .btn-group:even').addClass('dark_stripe');
         $(filter + ' .btn-group:last').addClass('last_stripe');

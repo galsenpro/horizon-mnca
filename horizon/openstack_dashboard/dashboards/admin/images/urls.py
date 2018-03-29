@@ -16,27 +16,20 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from django.conf import settings
+from django.conf.urls import patterns
 from django.conf.urls import url
-from django.utils.translation import ugettext_lazy as _
 
-from horizon.browsers.views import AngularIndexView
 from openstack_dashboard.dashboards.admin.images import views
 
-if settings.ANGULAR_FEATURES['images_panel']:
-    title = _("Images")
-    # New angular images
-    urlpatterns = [
-        url(r'^$', AngularIndexView.as_view(title=title), name='index'),
-        url(r'^(?P<image_id>[^/]+)/detail/$',
-            AngularIndexView.as_view(title=title), name='detail'),
-    ]
-else:
-    urlpatterns = [
-        url(r'^$', views.IndexView.as_view(), name='index'),
-        url(r'^create/$', views.CreateView.as_view(), name='create'),
-        url(r'^(?P<image_id>[^/]+)/update/$',
-            views.UpdateView.as_view(), name='update'),
-        url(r'^(?P<image_id>[^/]+)/detail/$',
-            views.DetailView.as_view(), name='detail')
-    ]
+
+urlpatterns = patterns(
+    'openstack_dashboard.dashboards.admin.images.views',
+    url(r'^$', views.IndexView.as_view(), name='index'),
+    url(r'^create/$', views.CreateView.as_view(), name='create'),
+    url(r'^(?P<image_id>[^/]+)/update/$',
+        views.UpdateView.as_view(), name='update'),
+    url(r'^(?P<id>[^/]+)/update_metadata/$',
+        views.UpdateMetadataView.as_view(), name='update_metadata'),
+    url(r'^(?P<image_id>[^/]+)/detail/$',
+        views.DetailView.as_view(), name='detail')
+)

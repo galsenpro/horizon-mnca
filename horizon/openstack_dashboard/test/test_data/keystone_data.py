@@ -13,7 +13,7 @@
 #    under the License.
 
 import copy
-from datetime import timedelta
+from datetime import timedelta  # noqa
 
 from django.conf import settings
 from django.utils import datetime_safe
@@ -23,9 +23,6 @@ from keystoneclient.v2_0 import ec2
 from keystoneclient.v2_0 import roles
 from keystoneclient.v2_0 import tenants
 from keystoneclient.v2_0 import users
-from keystoneclient.v3.contrib.federation import identity_providers
-from keystoneclient.v3.contrib.federation import mappings
-from keystoneclient.v3.contrib.federation import protocols
 from keystoneclient.v3 import domains
 from keystoneclient.v3 import groups
 from keystoneclient.v3 import role_assignments
@@ -51,38 +48,26 @@ SERVICE_CATALOG = [
           "adminURL": "http://admin.nova2.example.com:8774/v2",
           "internalURL": "http://int.nova2.example.com:8774/v2",
           "publicURL": "http://public.nova2.example.com:8774/v2"}]},
-    {"type": "volumev2",
-     "name": "cinderv2",
+    {"type": "volume",
+     "name": "cinder",
      "endpoints_links": [],
      "endpoints": [
          {"region": "RegionOne",
-          "adminURL": "http://admin.cinder.example.com:8776/v2",
-          "internalURL": "http://int.cinder.example.com:8776/v2",
-          "publicURL": "http://public.cinder.example.com:8776/v2"},
+          "adminURL": "http://admin.nova.example.com:8776/v1",
+          "internalURL": "http://int.nova.example.com:8776/v1",
+          "publicURL": "http://public.nova.example.com:8776/v1"},
          {"region": "RegionTwo",
-          "adminURL": "http://admin.cinder.example.com:8776/v2",
-          "internalURL": "http://int.cinder.example.com:8776/v2",
-          "publicURL": "http://public.cinder.example.com:8776/v2"}]},
-    {"type": "volumev3",
-     "name": "cinderv3",
-     "endpoints_links": [],
-     "endpoints": [
-         {"region": "RegionOne",
-          "adminURL": "http://admin.cinder.example.com:8776/v3",
-          "internalURL": "http://int.cinder.example.com:8776/v3",
-          "publicURL": "http://public.cinder.example.com:8776/v3"},
-         {"region": "RegionTwo",
-          "adminURL": "http://admin.cinder.example.com:8776/v3",
-          "internalURL": "http://int.cinder.example.com:8776/v3",
-          "publicURL": "http://public.cinder.example.com:8776/v3"}]},
+          "adminURL": "http://admin.nova.example.com:8776/v1",
+          "internalURL": "http://int.nova.example.com:8776/v1",
+          "publicURL": "http://public.nova.example.com:8776/v1"}]},
     {"type": "image",
      "name": "glance",
      "endpoints_links": [],
      "endpoints": [
          {"region": "RegionOne",
-          "adminURL": "http://admin.glance.example.com:9292",
-          "internalURL": "http://int.glance.example.com:9292",
-          "publicURL": "http://public.glance.example.com:9292"}]},
+          "adminURL": "http://admin.glance.example.com:9292/v1",
+          "internalURL": "http://int.glance.example.com:9292/v1",
+          "publicURL": "http://public.glance.example.com:9292/v1"}]},
     {"type": "identity",
      "name": "keystone",
      "endpoints_links": [],
@@ -115,6 +100,38 @@ SERVICE_CATALOG = [
           "adminURL": "http://admin.nova.example.com:8773/services/Admin",
           "publicURL": "http://public.nova.example.com:8773/services/Cloud",
           "internalURL": "http://int.nova.example.com:8773/services/Cloud"}]},
+    {"type": "metering",
+     "name": "ceilometer",
+     "endpoints_links": [],
+     "endpoints": [
+         {"region": "RegionOne",
+          "adminURL": "http://admin.ceilometer.example.com:8777",
+          "publicURL": "http://public.ceilometer.example.com:8777",
+          "internalURL": "http://int.ceilometer.example.com:8777"}]},
+    {"type": "orchestration",
+     "name": "Heat",
+     "endpoints_links": [],
+     "endpoints": [
+         {"region": "RegionOne",
+          "adminURL": "http://admin.heat.example.com:8004/v1",
+          "publicURL": "http://public.heat.example.com:8004/v1",
+          "internalURL": "http://int.heat.example.com:8004/v1"}]},
+    {"type": "database",
+     "name": "Trove",
+     "endpoints_links": [],
+     "endpoints": [
+         {"region": "RegionOne",
+          "adminURL": "http://admin.trove.example.com:8779/v1.0",
+          "publicURL": "http://public.trove.example.com:8779/v1.0",
+          "internalURL": "http://int.trove.example.com:8779/v1.0"}]},
+    {"type": "data_processing",
+     "name": "Sahara",
+     "endpoints_links": [],
+     "endpoints": [
+         {"region": "RegionOne",
+          "adminURL": "http://admin.sahara.example.com:8386/v1.1",
+          "publicURL": "http://public.sahara.example.com:8386/v1.1",
+          "internalURL": "http://int.sahara.example.com:8386/v1.1"}]}
 ]
 
 
@@ -131,16 +148,12 @@ def data(TEST):
     TEST.roles = utils.TestDataContainer()
     TEST.ec2 = utils.TestDataContainer()
 
-    TEST.identity_providers = utils.TestDataContainer()
-    TEST.idp_mappings = utils.TestDataContainer()
-    TEST.idp_protocols = utils.TestDataContainer()
-
     admin_role_dict = {'id': '1',
                        'name': 'admin'}
-    admin_role = roles.Role(roles.RoleManager, admin_role_dict, loaded=True)
+    admin_role = roles.Role(roles.RoleManager, admin_role_dict)
     member_role_dict = {'id': "2",
                         'name': settings.OPENSTACK_KEYSTONE_DEFAULT_ROLE}
-    member_role = roles.Role(roles.RoleManager, member_role_dict, loaded=True)
+    member_role = roles.Role(roles.RoleManager, member_role_dict)
     TEST.roles.add(admin_role, member_role)
     TEST.roles.admin = admin_role
     TEST.roles.member = member_role
@@ -153,19 +166,13 @@ def data(TEST):
                      'name': 'disabled_domain',
                      'description': "a disabled test domain.",
                      'enabled': False}
-    domain_dict_3 = {'id': "3",
-                     'name': 'another_test_domain',
-                     'description': "another test domain.",
-                     'enabled': True}
     domain = domains.Domain(domains.DomainManager, domain_dict)
     disabled_domain = domains.Domain(domains.DomainManager, domain_dict_2)
-    another_domain = domains.Domain(domains.DomainManager, domain_dict_3)
-    TEST.domains.add(domain, disabled_domain, another_domain)
+    TEST.domains.add(domain, disabled_domain)
     TEST.domain = domain  # Your "current" domain
 
     user_dict = {'id': "1",
                  'name': 'test_user',
-                 'description': 'test_description',
                  'email': 'test@example.com',
                  'password': 'password',
                  'token': 'test_token',
@@ -175,7 +182,6 @@ def data(TEST):
     user = users.User(None, user_dict)
     user_dict = {'id': "2",
                  'name': 'user_two',
-                 'description': 'test_description',
                  'email': 'two@example.com',
                  'password': 'password',
                  'token': 'test_token',
@@ -185,7 +191,6 @@ def data(TEST):
     user2 = users.User(None, user_dict)
     user_dict = {'id': "3",
                  'name': 'user_three',
-                 'description': 'test_description',
                  'email': 'three@example.com',
                  'password': 'password',
                  'token': 'test_token',
@@ -195,7 +200,6 @@ def data(TEST):
     user3 = users.User(None, user_dict)
     user_dict = {'id': "4",
                  'name': 'user_four',
-                 'description': 'test_description',
                  'email': 'four@example.com',
                  'password': 'password',
                  'token': 'test_token',
@@ -205,7 +209,6 @@ def data(TEST):
     user4 = users.User(None, user_dict)
     user_dict = {'id': "5",
                  'name': 'user_five',
-                 'description': 'test_description',
                  'email': None,
                  'password': 'password',
                  'token': 'test_token',
@@ -241,13 +244,7 @@ def data(TEST):
                   'project_id': '2',
                   'domain_id': '2'}
     group4 = groups.Group(groups.GroupManager(None), group_dict)
-    # this group intentionally only has id/domain_id to match data
-    # returned from Keystone backends like LDAP
-    group_dict = {'id': "5",
-                  'domain_id': '2'}
-    group5 = groups.Group(groups.GroupManager(None), group_dict)
-
-    TEST.groups.add(group, group2, group3, group4, group5)
+    TEST.groups.add(group, group2, group3, group4)
 
     role_assignments_dict = {'user': {'id': '1'},
                              'role': {'id': '1'},
@@ -367,66 +364,5 @@ def data(TEST):
     TEST.tokens.unscoped_token = unscoped_token
 
     access_secret = ec2.EC2(ec2.CredentialsManager, {"access": "access",
-                                                     "secret": "secret",
-                                                     "tenant_id": tenant.id})
+                                                     "secret": "secret"})
     TEST.ec2.add(access_secret)
-
-    idp_dict_1 = {'id': 'idp_1',
-                  'description': 'identity provider 1',
-                  'enabled': True,
-                  'remote_ids': ['rid_1', 'rid_2']}
-    idp_1 = identity_providers.IdentityProvider(
-        identity_providers.IdentityProviderManager,
-        idp_dict_1, loaded=True)
-    idp_dict_2 = {'id': 'idp_2',
-                  'description': 'identity provider 2',
-                  'enabled': True,
-                  'remote_ids': ['rid_3', 'rid_4']}
-    idp_2 = identity_providers.IdentityProvider(
-        identity_providers.IdentityProviderManager,
-        idp_dict_2, loaded=True)
-    TEST.identity_providers.add(idp_1, idp_2)
-
-    idp_mapping_dict = {
-        "id": "mapping_1",
-        "rules": [
-            {
-                "local": [
-                    {
-                        "user": {
-                            "name": "{0}"
-                        }
-                    },
-                    {
-                        "group": {
-                            "id": "0cd5e9"
-                        }
-                    }
-                ],
-                "remote": [
-                    {
-                        "type": "UserName"
-                    },
-                    {
-                        "type": "orgPersonType",
-                        "not_any_of": [
-                            "Contractor",
-                            "Guest"
-                        ]
-                    }
-                ]
-            }
-        ]
-    }
-    idp_mapping = mappings.Mapping(
-        mappings.MappingManager(None),
-        idp_mapping_dict)
-    TEST.idp_mappings.add(idp_mapping)
-
-    idp_protocol_dict_1 = {'id': 'protocol_1',
-                           'mapping_id': 'mapping_1'}
-    idp_protocol = protocols.Protocol(
-        protocols.ProtocolManager,
-        idp_protocol_dict_1,
-        loaded=True)
-    TEST.idp_protocols.add(idp_protocol)

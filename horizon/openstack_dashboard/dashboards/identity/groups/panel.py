@@ -17,6 +17,7 @@ from django.utils.translation import ugettext_lazy as _
 import horizon
 
 from openstack_dashboard.api import keystone
+from openstack_dashboard.dashboards.identity import dashboard
 
 
 class Groups(horizon.Panel):
@@ -24,12 +25,6 @@ class Groups(horizon.Panel):
     slug = 'groups'
     policy_rules = (("identity", "identity:list_groups"),)
 
-    @staticmethod
-    def can_register():
-        return keystone.VERSIONS.active >= 3
 
-    def can_access(self, context):
-        if keystone.is_multi_domain_enabled() \
-                and not keystone.is_domain_admin(context['request']):
-            return False
-        return super(Groups, self).can_access(context)
+if keystone.VERSIONS.active >= 3:
+    dashboard.Identity.register(Groups)

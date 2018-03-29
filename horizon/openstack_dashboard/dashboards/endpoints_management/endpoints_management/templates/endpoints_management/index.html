@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% block title %}{% endblock %}
+
+{% block page_header %}
+	{% include "horizon/common/_domain_page_header.html" with title="Manage Endpoints" %}
+{% endblock page_header %}
+
+{% block main %}
+<div id="endpoints">
+
+  <div class="panel panel-default datatable">
+    <div class="panel-heading">
+      <div class="title">Services</div>
+    </div>
+
+    <div class="panel-body row datatable-content no-max-height" id="endpoints_content">
+      <div class="col-md-3 col-xs-12 btn-group-vertical services_list" id="services_list">
+        {% for service in services %}
+        <div class="btn btn-default service" data-service-name="{{ service.name }}">
+          <div class="service-name">{{ service.name.capitalize }}</div>
+          <div class="checkbox checkbox-slider--b-flat" id="{{ service.name }}_switch">
+            <label>
+              <input type="checkbox" autocomplete="off"><span></span>
+            </label>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="col-md-9 col-xs-12">
+      	<div class="service_description" id="default_service_description">
+          <h4>Description</h4>
+          <div class="alert alert-info">
+            Select a service to see its description
+          </div>
+        </div>
+        {% for form in endpoints_forms %}
+        	{% include form.template with form=form %}
+          {% if form.service_enabled %}
+            {% include "endpoints_management/endpoints_management/_disable_service_modal.html" with service_name=form.service.name %}
+            <script type="text/javascript">
+              $('#{{ form.service.name }}_switch input').prop('checked', true);
+            </script>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% include "endpoints_management/endpoints_management/_endpoints_script.html" %}
+{% endblock %}

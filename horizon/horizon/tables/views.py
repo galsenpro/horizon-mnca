@@ -15,10 +15,9 @@
 from collections import defaultdict
 
 from django import shortcuts
+from django.views import generic
 
-from horizon import views
-
-from horizon.templatetags.horizon import has_permissions
+from horizon.templatetags.horizon import has_permissions  # noqa
 
 
 class MultiTableMixin(object):
@@ -30,6 +29,7 @@ class MultiTableMixin(object):
         self.table_classes = getattr(self, "table_classes", [])
         self._data = {}
         self._tables = {}
+
         self._data_methods = defaultdict(list)
         self.get_data_methods(self.table_classes, self._data_methods)
 
@@ -115,84 +115,19 @@ class MultiTableMixin(object):
     def has_more_data(self, table):
         return False
 
-    def needs_filter_first(self, table):
-        return False
-
     def handle_table(self, table):
         name = table.name
         data = self._get_data_dict()
         self._tables[name].data = data[table._meta.name]
-        self._tables[name].needs_filter_first = \
-            self.needs_filter_first(table)
         self._tables[name]._meta.has_more_data = self.has_more_data(table)
         self._tables[name]._meta.has_prev_data = self.has_prev_data(table)
         handled = self._tables[name].maybe_handle()
         return handled
 
-    def get_server_filter_info(self, request, table=None):
-        if not table:
-            table = self.get_table()
-        filter_action = table._meta._filter_action
-        if filter_action is None or filter_action.filter_type != 'server':
-            return None
-        param_name = filter_action.get_param_name()
-        filter_string = request.POST.get(param_name)
-        filter_string_session = request.session.get(param_name, "")
-        changed = (filter_string is not None
-                   and filter_string != filter_string_session)
-        if filter_string is None:
-            filter_string = filter_string_session
-        filter_field_param = param_name + '_field'
-        filter_field = request.POST.get(filter_field_param)
-        filter_field_session = request.session.get(filter_field_param)
-        if filter_field is None and filter_field_session is not None:
-            filter_field = filter_field_session
-        filter_info = {
-            'action': filter_action,
-            'value_param': param_name,
-            'value': filter_string,
-            'field_param': filter_field_param,
-            'field': filter_field,
-            'changed': changed
-        }
-        return filter_info
 
-    def handle_server_filter(self, request, table=None):
-        """Update the table server filter information in the session.
-
-        Returns True if the filter has been changed.
-        """
-        if not table:
-            table = self.get_table()
-        filter_info = self.get_server_filter_info(request, table)
-        if filter_info is None:
-            return False
-        request.session[filter_info['value_param']] = filter_info['value']
-        if filter_info['field_param']:
-            request.session[filter_info['field_param']] = filter_info['field']
-        return filter_info['changed']
-
-    def update_server_filter_action(self, request, table=None):
-        """Update the table server side filter action.
-
-        It is done based on the current filter. The filter info may be stored
-        in the session and this will restore it.
-        """
-        if not table:
-            table = self.get_table()
-        filter_info = self.get_server_filter_info(request, table)
-        if filter_info is not None:
-            action = filter_info['action']
-            setattr(action, 'filter_string', filter_info['value'])
-            if filter_info['field_param']:
-                setattr(action, 'filter_field', filter_info['field'])
-
-
-class MultiTableView(MultiTableMixin, views.HorizonTemplateView):
-    """Generic view to handle multiple DataTable classes in a single view.
-
-    Each DataTable class must be a :class:`~horizon.tables.DataTable` class
-    or its subclass.
+class MultiTableView(MultiTableMixin, generic.TemplateView):
+    """A class-based generic view to handle the display and processing of
+    multiple :class:`~horizon.tables.DataTable` classes in a single view.
 
     Three steps are required to use this view: set the ``table_classes``
     attribute with a tuple of the desired
@@ -201,7 +136,6 @@ class MultiTableView(MultiTableMixin, views.HorizonTemplateView):
     which returns a set of data for that table; and specify a template for
     the ``template_name`` attribute.
     """
-
     def construct_tables(self):
         tables = self.get_tables().values()
         # Early out before data is loaded
@@ -244,11 +178,10 @@ class DataTableView(MultiTableView):
     """
     table_class = None
     context_object_name = 'table'
-    template_name = 'horizon/common/_data_table_view.html'
 
     def _get_data_dict(self):
         if not self._data:
-            self.update_server_filter_action(self.request)
+            self.update_server_filter_action()
             self._data = {self.table_class._meta.name: self.get_data()}
         return self._data
 
@@ -287,33 +220,61 @@ class DataTableView(MultiTableView):
             return shortcuts.redirect(self.get_table().get_absolute_url())
         return self.get(request, *args, **kwargs)
 
-    def get_filters(self, filters=None, filters_map=None):
-        """Converts a string given by the user into a valid api filter value.
+    def get_server_filter_info(self, request):
+        filter_action = self.get_table()._meta._filter_action
+        if filter_action is None or filter_action.filter_type != 'server':
+            return None
+        param_name = filter_action.get_param_name()
+        filter_string = request.POST.get(param_name)
+        filter_string_session = request.session.get(param_name)
+        changed = (filter_string is not None and
+                   filter_string_session is not None and
+                   filter_string != filter_string_session)
+        if filter_string is None and filter_string_session is not None:
+            filter_string = filter_string_session
+        filter_field_param = param_name + '_field'
+        filter_field = request.POST.get(filter_field_param)
+        filter_field_session = request.session.get(filter_field_param)
+        if filter_field is None and filter_field_session is not None:
+            filter_field = filter_field_session
+        filter_info = {
+            'action': filter_action,
+            'value_param': param_name,
+            'value': filter_string,
+            'field_param': filter_field_param,
+            'field': filter_field,
+            'changed': changed
+        }
+        return filter_info
 
-        :filters: Default filter values.
-            {'filter1': filter_value, 'filter2': filter_value}
-        :filters_map: mapping between user input and valid api filter values.
-            {'filter_name':{_("true_value"):True, _("false_value"):False}
+    def handle_server_filter(self, request):
+        """Update the table server filter information in the session and
+        determine if the filter has been changed.
         """
-        filters = filters or {}
-        filters_map = filters_map or {}
-        filter_action = self.table._meta._filter_action
-        if filter_action:
-            filter_field = self.table.get_filter_field()
-            if filter_action.is_api_filter(filter_field):
-                filter_string = self.table.get_filter_string().strip()
-                if filter_field and filter_string:
-                    filter_map = filters_map.get(filter_field, {})
-                    # We use the filter_string given by the user and
-                    # look for valid values in the filter_map that's why
-                    # we apply lower()
-                    filters[filter_field] = filter_map.get(
-                        filter_string.lower(), filter_string)
-        return filters
+        filter_info = self.get_server_filter_info(request)
+        if filter_info is None:
+            return False
+        request.session[filter_info['value_param']] = filter_info['value']
+        if filter_info['field_param']:
+            request.session[filter_info['field_param']] = filter_info['field']
+        return filter_info['changed']
+
+    def update_server_filter_action(self):
+        """Update the table server side filter action based on the current
+        filter. The filter info may be stored in the session and this will
+        restore it.
+        """
+        filter_info = self.get_server_filter_info(self.request)
+        if filter_info is not None:
+            action = filter_info['action']
+            setattr(action, 'filter_string', filter_info['value'])
+            if filter_info['field_param']:
+                setattr(action, 'filter_field', filter_info['field'])
 
 
 class MixedDataTableView(DataTableView):
-    """A class-based generic view to handle DataTable with mixed data types.
+    """A class-based generic view to handle DataTable with mixed data
+    types.
 
     Basic usage is the same as DataTableView.
 
@@ -360,30 +321,3 @@ class MixedDataTableView(DataTableView):
                                  'in table %s to use MixedDataTableView.'
                                  % self.table._meta.name)
         return self.table
-
-
-class PagedTableMixin(object):
-    def __init__(self, *args, **kwargs):
-        super(PagedTableMixin, self).__init__(*args, **kwargs)
-        self._has_prev_data = False
-        self._has_more_data = False
-
-    def has_prev_data(self, table):
-        return self._has_prev_data
-
-    def has_more_data(self, table):
-        return self._has_more_data
-
-    def _get_marker(self):
-        try:
-            meta = self.table_class._meta
-        except AttributeError:
-            meta = self.table_classes[0]._meta
-        prev_marker = self.request.GET.get(meta.prev_pagination_param, None)
-        if prev_marker:
-            return prev_marker, "asc"
-        else:
-            marker = self.request.GET.get(meta.pagination_param, None)
-            if marker:
-                return marker, "desc"
-            return None, "desc"

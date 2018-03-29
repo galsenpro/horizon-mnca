@@ -17,21 +17,72 @@ from django.utils.translation import ugettext_lazy as _
 import horizon
 
 
-# ObjectStorePanels is an example for a PanelGroup
-# for panel classes in general, see below
+class BasePanels(horizon.PanelGroup):
+    slug = "compute"
+    name = _("Compute")
+    panels = ('overview',
+              'instances',
+              'volumes',
+              'images',
+              'access_and_security',)
+
+
+class NetworkPanels(horizon.PanelGroup):
+    slug = "network"
+    name = _("Network")
+    panels = ('network_topology',
+              'networks',
+              'routers',
+              'loadbalancers',
+              'firewalls',
+              'vpn',)
+
+
 class ObjectStorePanels(horizon.PanelGroup):
     slug = "object_store"
     name = _("Object Store")
     panels = ('containers',)
 
 
+class OrchestrationPanels(horizon.PanelGroup):
+    name = _("Orchestration")
+    slug = "orchestration"
+    panels = ('stacks',)
+
+
+class DatabasePanels(horizon.PanelGroup):
+    name = _("Database")
+    slug = "database"
+    panels = ('databases',
+              'database_backups',)
+
+
+class DataProcessingPanels(horizon.PanelGroup):
+    name = _("Data Processing")
+    slug = "data_processing"
+    panels = ('data_processing.clusters',
+              'data_processing.cluster_templates',
+              'data_processing.nodegroup_templates',
+              'data_processing.job_executions',
+              'data_processing.jobs',
+              'data_processing.job_binaries',
+              'data_processing.data_sources',
+              'data_processing.data_image_registry',
+              'data_processing.data_plugins',)
+
+
 class Project(horizon.Dashboard):
     name = _("Project")
     slug = "project"
+    panels = (
+        BasePanels,
+        NetworkPanels,
+        ObjectStorePanels,
+        OrchestrationPanels,
+        DatabasePanels,
+        DataProcessingPanels,)
+    default_panel = 'overview'
+    supports_tenants = True
 
-    def can_access(self, context):
-        request = context['request']
-        has_project = request.user.token.project.get('id') is not None
-        return super(Project, self).can_access(context) and has_project
 
 horizon.register(Project)

@@ -13,12 +13,11 @@
 #    under the License.
 
 
-import logging
 import os
 import random
 import string
 
-from oslo_concurrency import lockutils
+import lockfile
 
 
 class FilePermissionError(Exception):
@@ -33,25 +32,11 @@ def generate_key(key_length=64):
     see http://docs.python.org/library/random.html#random.SystemRandom.
     """
     if hasattr(random, 'SystemRandom'):
-        logging.info('Generating a secure random key using SystemRandom.')
         choice = random.SystemRandom().choice
     else:
-        msg = "WARNING: SystemRandom not present. Generating a random "\
-              "key using random.choice (NOT CRYPTOGRAPHICALLY SECURE)."
-        logging.warning(msg)
         choice = random.choice
     return ''.join(map(lambda x: choice(string.digits + string.ascii_letters),
                    range(key_length)))
-
-
-def read_from_file(key_file='.secret_key'):
-    if (os.stat(key_file).st_mode & 0o777) != 0o600:
-        raise FilePermissionError(
-            "Insecure permissions on key file %s, should be 0600." %
-            os.path.abspath(key_file))
-    with open(key_file, 'r') as f:
-        key = f.readline()
-        return key
 
 
 def generate_or_read_from_file(key_file='.secret_key', key_length=64):
@@ -63,16 +48,7 @@ def generate_or_read_from_file(key_file='.secret_key', key_length=64):
     environment).  Also checks if file permissions are set correctly and
     throws an exception if not.
     """
-    abspath = os.path.abspath(key_file)
-    # check, if key_file already exists
-    # if yes, then just read and return key
-    if os.path.exists(key_file):
-        key = read_from_file(key_file)
-        return key
-
-    # otherwise, first lock to make sure only one process
-    lock = lockutils.external_lock(key_file + ".lock",
-                                   lock_path=os.path.dirname(abspath))
+    lock = lockfile.FileLock(key_file)
     with lock:
         if not os.path.exists(key_file):
             key = generate_key(key_length)
@@ -81,5 +57,8 @@ def generate_or_read_from_file(key_file='.secret_key', key_length=64):
                 f.write(key)
             os.umask(old_umask)
         else:
-            key = read_from_file(key_file)
+            if oct(os.stat(key_file).st_mode & 0o777) != '0600':
+                raise FilePermissionError("Insecure key file permissions!")
+            with open(key_file, 'r') as f:
+                key = f.readline()
         return key

@@ -16,9 +16,12 @@ from django.utils.translation import ugettext_lazy as _
 
 import horizon
 
+from openstack_dashboard.dashboards.admin import dashboard
+
 
 class Networks(horizon.Panel):
     name = _("Networks")
     slug = 'networks'
     permissions = ('openstack.services.network',)
-    policy_rules = (("network", "context_is_admin"),)
+
+dashboard.Admin.register(Networks)

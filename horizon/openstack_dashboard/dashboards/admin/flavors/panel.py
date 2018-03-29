@@ -20,9 +20,13 @@ from django.utils.translation import ugettext_lazy as _
 
 import horizon
 
+from openstack_dashboard.dashboards.admin import dashboard
+
 
 class Flavors(horizon.Panel):
     name = _("Flavors")
     slug = 'flavors'
     permissions = ('openstack.services.compute',)
-    policy_rules = (("compute", "context_is_admin"),)
+
+
+dashboard.Admin.register(Flavors)

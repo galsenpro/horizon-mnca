@@ -16,8 +16,8 @@
 from django.core.urlresolvers import reverse
 from django import http
 
-from mox3.mox import IgnoreArg
-from mox3.mox import IsA
+from mox import IgnoreArg  # noqa
+from mox import IsA  # noqa
 
 from horizon.workflows import views
 
@@ -36,8 +36,7 @@ GROUP_ROLE_PREFIX = constants.DOMAIN_GROUP_MEMBER_SLUG + "_role_"
 
 
 class DomainsViewTests(test.BaseAdminViewTests):
-    @test.create_stubs({api.keystone: ('domain_get',
-                                       'domain_list',)})
+    @test.create_stubs({api.keystone: ('domain_list',)})
     def test_index(self):
         api.keystone.domain_list(IgnoreArg()).AndReturn(self.domains.list())
 
@@ -50,11 +49,8 @@ class DomainsViewTests(test.BaseAdminViewTests):
         self.assertContains(res, 'Create Domain')
         self.assertContains(res, 'Edit')
         self.assertContains(res, 'Delete Domain')
-        self.assertContains(res, 'Disable Domain')
-        self.assertContains(res, 'Enable Domain')
 
-    @test.create_stubs({api.keystone: ('domain_get',
-                                       'domain_list',
+    @test.create_stubs({api.keystone: ('domain_list',
                                        'keystone_can_edit_domain')})
     def test_index_with_keystone_can_edit_domain_false(self):
         api.keystone.domain_list(IgnoreArg()).AndReturn(self.domains.list())
@@ -70,11 +66,8 @@ class DomainsViewTests(test.BaseAdminViewTests):
         self.assertNotContains(res, 'Create Domain')
         self.assertNotContains(res, 'Edit')
         self.assertNotContains(res, 'Delete Domain')
-        self.assertNotContains(res, 'Disable Domain')
-        self.assertNotContains(res, 'Enable Domain')
 
-    @test.create_stubs({api.keystone: ('domain_get',
-                                       'domain_list',
+    @test.create_stubs({api.keystone: ('domain_list',
                                        'domain_delete')})
     def test_delete_domain(self):
         domain = self.domains.get(id="2")
@@ -89,8 +82,7 @@ class DomainsViewTests(test.BaseAdminViewTests):
 
         self.assertRedirectsNoFollow(res, DOMAINS_INDEX_URL)
 
-    @test.create_stubs({api.keystone: ('domain_get',
-                                       'domain_list', )})
+    @test.create_stubs({api.keystone: ('domain_list', )})
     def test_delete_with_enabled_domain(self):
         domain = self.domains.get(id="1")
 
@@ -105,51 +97,9 @@ class DomainsViewTests(test.BaseAdminViewTests):
         self.assertMessageCount(error=2)
 
     @test.create_stubs({api.keystone: ('domain_get',
-                                       'domain_list',
-                                       'domain_update')})
-    def test_disable(self):
-        domain = self.domains.get(id="1")
-
-        api.keystone.domain_list(IgnoreArg()).AndReturn(self.domains.list())
-        api.keystone.domain_update(IsA(http.HttpRequest),
-                                   description=domain.description,
-                                   domain_id=domain.id,
-                                   enabled=False,
-                                   name=domain.name).AndReturn(None)
-
-        self.mox.ReplayAll()
-
-        formData = {'action': 'domains__disable__%s' % domain.id}
-        res = self.client.post(DOMAINS_INDEX_URL, formData)
-
-        self.assertRedirectsNoFollow(res, DOMAINS_INDEX_URL)
-        self.assertMessageCount(error=0)
-
-    @test.create_stubs({api.keystone: ('domain_get',
-                                       'domain_list',
-                                       'domain_update')})
-    def test_enable(self):
-        domain = self.domains.get(id="2")
-
-        api.keystone.domain_list(IgnoreArg()).AndReturn(self.domains.list())
-        api.keystone.domain_update(IsA(http.HttpRequest),
-                                   description=domain.description,
-                                   domain_id=domain.id,
-                                   enabled=True,
-                                   name=domain.name).AndReturn(None)
-
-        self.mox.ReplayAll()
-
-        formData = {'action': 'domains__enable__%s' % domain.id}
-        res = self.client.post(DOMAINS_INDEX_URL, formData)
-
-        self.assertRedirectsNoFollow(res, DOMAINS_INDEX_URL)
-        self.assertMessageCount(error=0)
-
-    @test.create_stubs({api.keystone: ('domain_get',
                                        'domain_list', )})
     def test_set_clear_domain_context(self):
-        domain = self.domains.get(id="3")
+        domain = self.domains.get(id="1")
 
         api.keystone.domain_get(IgnoreArg(), domain.id).AndReturn(domain)
         api.keystone.domain_get(IgnoreArg(), domain.id).AndReturn(domain)
@@ -163,7 +113,7 @@ class DomainsViewTests(test.BaseAdminViewTests):
 
         self.assertTemplateUsed(res, constants.DOMAINS_INDEX_VIEW_TEMPLATE)
         self.assertItemsEqual(res.context['table'].data, [domain, ])
-        self.assertContains(res, "<em>another_test_domain:</em>")
+        self.assertContains(res, "<em>test_domain:</em>")
 
         formData = {'action': 'domains__clear_domain_context__%s' % domain.id}
         res = self.client.post(DOMAINS_INDEX_URL, formData)
@@ -171,7 +121,6 @@ class DomainsViewTests(test.BaseAdminViewTests):
         self.assertTemplateUsed(res, constants.DOMAINS_INDEX_VIEW_TEMPLATE)
         self.assertItemsEqual(res.context['table'].data, self.domains.list())
         self.assertNotContains(res, "<em>test_domain:</em>")
-        self.assertNotContains(res, "<em>another_test_domain:</em>")
 
 
 class CreateDomainWorkflowTests(test.BaseAdminViewTests):
@@ -276,8 +225,7 @@ class UpdateDomainWorkflowTests(test.BaseAdminViewTests):
         api.keystone.user_list(IsA(http.HttpRequest), domain=domain.id) \
             .AndReturn(users)
         api.keystone.role_assignments_list(IsA(http.HttpRequest),
-                                           domain=domain.id,
-                                           include_subtree=False) \
+                                           domain=domain.id) \
             .AndReturn(role_assignments)
         api.keystone.group_list(IsA(http.HttpRequest), domain=domain.id) \
             .AndReturn(groups)
@@ -339,8 +287,7 @@ class UpdateDomainWorkflowTests(test.BaseAdminViewTests):
         api.keystone.user_list(IsA(http.HttpRequest), domain=domain.id) \
             .AndReturn(users)
         api.keystone.role_assignments_list(IsA(http.HttpRequest),
-                                           domain=domain.id,
-                                           include_subtree=False) \
+                                           domain=domain.id) \
             .AndReturn(role_assignments)
         api.keystone.group_list(IsA(http.HttpRequest), domain=domain.id) \
             .AndReturn(groups)
@@ -363,30 +310,53 @@ class UpdateDomainWorkflowTests(test.BaseAdminViewTests):
 
         # handle
         api.keystone.domain_update(IsA(http.HttpRequest),
-                                   domain.id,
-                                   name=domain.name,
                                    description=test_description,
-                                   enabled=domain.enabled).AndReturn(None)
-
-        api.keystone.role_assignments_list(IsA(http.HttpRequest),
-                                           domain=domain.id,
-                                           include_subtree=False) \
-            .AndReturn(role_assignments)
+                                   domain_id=domain.id,
+                                   enabled=domain.enabled,
+                                   name=domain.name).AndReturn(None)
 
         api.keystone.user_list(IsA(http.HttpRequest),
                                domain=domain.id).AndReturn(users)
 
-        # Give user 3 role 1
+        # admin user - try to remove all roles on current domain, warning
+        api.keystone.roles_for_user(IsA(http.HttpRequest), '1',
+                                    domain=domain.id) \
+            .AndReturn(roles)
+
+        # member user 1 - has role 1, will remove it
+        api.keystone.roles_for_user(IsA(http.HttpRequest), '2',
+                                    domain=domain.id) \
+            .AndReturn((roles[0],))
+        # remove role 1
+        api.keystone.remove_domain_user_role(IsA(http.HttpRequest),
+                                             domain=domain.id,
+                                             user='2',
+                                             role='1')
+        # add role 2
+        api.keystone.add_domain_user_role(IsA(http.HttpRequest),
+                                          domain=domain.id,
+                                          user='2',
+                                          role='2')
+
+        # member user 3 - has role 2
+        api.keystone.roles_for_user(IsA(http.HttpRequest), '3',
+                                    domain=domain.id) \
+            .AndReturn((roles[1],))
+        # remove role 2
+        api.keystone.remove_domain_user_role(IsA(http.HttpRequest),
+                                             domain=domain.id,
+                                             user='3',
+                                             role='2')
+        # add role 1
         api.keystone.add_domain_user_role(IsA(http.HttpRequest),
                                           domain=domain.id,
                                           user='3',
                                           role='1')
 
-        # remove role 2 from user 3
-        api.keystone.remove_domain_user_role(IsA(http.HttpRequest),
-                                             domain=domain.id,
-                                             user='3',
-                                             role='2')
+        # member user 5 - do nothing
+        api.keystone.roles_for_user(IsA(http.HttpRequest), '5',
+                                    domain=domain.id) \
+            .AndReturn([])
 
         # Group assignments
         api.keystone.group_list(IsA(http.HttpRequest),
@@ -481,8 +451,7 @@ class UpdateDomainWorkflowTests(test.BaseAdminViewTests):
         api.keystone.user_list(IsA(http.HttpRequest), domain=domain.id) \
             .AndReturn(users)
         api.keystone.role_assignments_list(IsA(http.HttpRequest),
-                                           domain=domain.id,
-                                           include_subtree=False) \
+                                           domain=domain.id) \
             .AndReturn(role_assignments)
         api.keystone.group_list(IsA(http.HttpRequest), domain=domain.id) \
             .AndReturn(groups)
@@ -506,10 +475,10 @@ class UpdateDomainWorkflowTests(test.BaseAdminViewTests):
 
         # handle
         api.keystone.domain_update(IsA(http.HttpRequest),
-                                   domain.id,
-                                   name=domain.name,
                                    description=test_description,
-                                   enabled=domain.enabled) \
+                                   domain_id=domain.id,
+                                   enabled=domain.enabled,
+                                   name=domain.name) \
             .AndRaise(self.exceptions.keystone)
 
         self.mox.ReplayAll()

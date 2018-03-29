@@ -1,0 +1,108 @@
+<script>
+  var highlightedService = '{{ highlighted_service }}',
+  serviceName = '',
+  editing = false;
+
+  function validateURL(url) {
+    var pattern = new RegExp('^(https?:\\/\\/)'+ // protocol
+     '((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.?)+[a-z]{2,}|'+ // domain name
+     '((\\d{1,3}\\.){3}\\d{1,3}))'+ // OR ip (v4) address
+     '(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*'+ // port and path
+     '(\\$\\(tenant_id\\)s)?'+ // $(tenant_id)s string
+     '(\\?[;&a-z\\d%_.~+=-]*)?'+ // query string
+     '(\\#[-a-z\\d_]*)?$','i'); // fragment locator
+    
+    if(!pattern.test(url)) {
+      return false;
+    } else {
+      return true;
+    }
+  };
+
+  // click on service depending on URL
+  $(function() {
+    if (highlightedService !== ''){
+      var inputFieldID = highlightedService.charAt(0).toUpperCase() + highlightedService.slice(1) + '_radio';
+      $('[data-service-name=' + highlightedService + ']').click();
+    }
+  });
+
+
+  // show service info and/or endpoints when clicking on service
+  $(".btn.btn-default.service").click(function(evt) {
+    // hide info message
+    $('#default_service_description').hide();
+
+    $(this).siblings('.active').removeClass('active');
+    $(this).addClass('active');
+
+    serviceName = $(this).attr('data-service-name');
+
+    // hide previous modal and show service modal
+    if (!editing){
+      $('.endpoints_modal').hide();
+      var modalID = '#manage_' + serviceName + '_endpoints_modal';
+      $(modalID).show();
+    } else {
+      window.location.replace(serviceName);
+    }
+  });
+
+  // enable/disable service when clicking switch
+  $('input[type="checkbox"]').click(function(evt) {
+    var modalID = '#manage_' + serviceName + '_endpoints_modal';
+    if ($(this).is(":checked")){
+      $(modalID).find('.service_description').show();
+      $(modalID).find('.endpoints_list').show();
+      $(modalID + ' .modal-footer').show();
+    } else if ($(modalID).find('.service_disabled').length === 0){
+      $(modalID).next('.disable_service_modal').find('.modal-footer').show();
+      $(modalID).next('.disable_service_modal').modal('show');
+    } else{
+      $(modalID).find('.endpoints_list').hide();
+      $(modalID + ' .modal-footer').hide();
+    }
+  });
+
+  // validate form on typing
+  $(".endpoints_data")
+  .on('keyup', 'input', function() {
+    editing = true;
+    var modalID = '#manage_' + serviceName + '_endpoints_modal';
+    $(modalID + ' .modal-footer').show();
+    $(window).bind('beforeunload', function(){
+      return 'Are you sure you want to leave?';
+    });})
+  .on('focusout', 'input', function() {
+    var modalID = '#manage_' + serviceName + '_endpoints_modal';
+    if (!validateURL($(this).val())) {
+      $(this).addClass('weak_pwd_input');
+    } else {
+      $(this).removeClass('weak_pwd_input');
+      $(modalID + ' .modal-footer').find('.btn-primary').removeClass('disabled').removeAttr('disabled');
+    }
+});
+
+  // validate form on submit
+  $(".endpoints_form").submit(function(evt) {
+    var validationError = false;
+    $(this).find('.endpoint_input').each(function(){
+      if (!validateURL($(this).val())){
+        $(this).addClass('weak_pwd_input');
+        validationError = true;
+      }
+    });
+
+    if (validationError){
+      evt.preventDefault();
+      if ($(this).find('.alert.alert-message.alert-danger').length === 0)
+        $(this).find('.service_description').prepend('<div class="alert alert-message alert-danger" id="validation-errors"><ul class="errorlist"><li>Please fill in all the endpoints or disable the service</li></ul></div>');
+    } else
+      $(window).unbind('beforeunload');
+  });
+
+  $('a.cancel').click(function(){
+    $(window).unbind('beforeunload');
+  });
+
+</script>

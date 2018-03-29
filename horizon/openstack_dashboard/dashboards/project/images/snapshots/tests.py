@@ -17,8 +17,9 @@
 #    under the License.
 
 from django.core.urlresolvers import reverse
+from django import http
 
-import mock
+from mox import IsA  # noqa
 
 from openstack_dashboard import api
 from openstack_dashboard.test import helpers as test
@@ -30,6 +31,9 @@ INDEX_URL = reverse('horizon:project:images:index')
 class SnapshotsViewTests(test.TestCase):
     def test_create_snapshot_get(self):
         server = self.servers.first()
+        self.mox.StubOutWithMock(api.nova, 'server_get')
+        api.nova.server_get(IsA(http.HttpRequest), server.id).AndReturn(server)
+        self.mox.ReplayAll()
 
         url = reverse('horizon:project:images:snapshots:create',
                       args=[server.id])
@@ -37,14 +41,29 @@ class SnapshotsViewTests(test.TestCase):
         self.assertTemplateUsed(res,
                                 'project/images/snapshots/create.html')
 
-    @mock.patch.object(api.nova, 'snapshot_create')
-    @mock.patch.object(api.nova, 'server_get')
-    def test_create_snapshot_post(self, mock_server_get, mock_snapshot_create):
+    def test_create_get_server_exception(self):
+        server = self.servers.first()
+        self.mox.StubOutWithMock(api.nova, 'server_get')
+        api.nova.server_get(IsA(http.HttpRequest), server.id) \
+            .AndRaise(self.exceptions.nova)
+        self.mox.ReplayAll()
+
+        url = reverse('horizon:project:images:snapshots:create',
+                      args=[server.id])
+        res = self.client.get(url)
+        redirect = reverse("horizon:project:instances:index")
+        self.assertRedirectsNoFollow(res, redirect)
+
+    def test_create_snapshot_post(self):
         server = self.servers.first()
         snapshot = self.snapshots.first()
 
-        mock_server_get.return_value = server
-        mock_snapshot_create.return_value = snapshot
+        self.mox.StubOutWithMock(api.nova, 'server_get')
+        self.mox.StubOutWithMock(api.nova, 'snapshot_create')
+        api.nova.server_get(IsA(http.HttpRequest), server.id).AndReturn(server)
+        api.nova.snapshot_create(IsA(http.HttpRequest), server.id,
+                                 snapshot.name).AndReturn(snapshot)
+        self.mox.ReplayAll()
 
         formData = {'method': 'CreateSnapshot',
                     'tenant_id': self.tenant.id,
@@ -55,18 +74,16 @@ class SnapshotsViewTests(test.TestCase):
         res = self.client.post(url, formData)
 
         self.assertRedirectsNoFollow(res, INDEX_URL)
-        mock_server_get.assert_called_once_with(test.IsHttpRequest(),
-                                                server.id)
-        mock_snapshot_create.assert_called_once_with(test.IsHttpRequest(),
-                                                     server.id, snapshot.name)
 
-    @mock.patch.object(api.nova, 'snapshot_create')
-    def test_create_snapshot_post_exception(self,
-                                            mock_snapshot_create):
+    def test_create_snapshot_post_exception(self):
         server = self.servers.first()
         snapshot = self.snapshots.first()
 
-        mock_snapshot_create.side_effect = self.exceptions.nova
+        self.mox.StubOutWithMock(api.nova, 'server_get')
+        self.mox.StubOutWithMock(api.nova, 'snapshot_create')
+        api.nova.snapshot_create(IsA(http.HttpRequest), server.id,
+                                 snapshot.name).AndRaise(self.exceptions.nova)
+        self.mox.ReplayAll()
 
         formData = {'method': 'CreateSnapshot',
                     'tenant_id': self.tenant.id,
@@ -76,7 +93,4 @@ class SnapshotsViewTests(test.TestCase):
                       args=[server.id])
         res = self.client.post(url, formData)
         redirect = reverse("horizon:project:instances:index")
-
         self.assertRedirectsNoFollow(res, redirect)
-        mock_snapshot_create.assert_called_once_with(test.IsHttpRequest(),
-                                                     server.id, snapshot.name)

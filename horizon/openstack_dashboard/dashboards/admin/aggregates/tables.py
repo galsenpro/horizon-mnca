@@ -14,6 +14,8 @@ from django.template import defaultfilters as filters
 from django.utils.translation import ugettext_lazy as _
 from django.utils.translation import ungettext_lazy
 
+import six
+
 from horizon import tables
 
 from openstack_dashboard import api
@@ -60,19 +62,9 @@ class ManageHostsAction(tables.LinkAction):
 class UpdateMetadataAction(tables.LinkAction):
     name = "update-metadata"
     verbose_name = _("Update Metadata")
-    ajax = False
+    url = constants.AGGREGATES_UPDATE_METADATA_URL
+    classes = ("ajax-modal",)
     icon = "pencil"
-    attrs = {"ng-controller": "MetadataModalHelperController as modal"}
-
-    def __init__(self, attrs=None, **kwargs):
-        kwargs['preempt'] = True
-        super(UpdateMetadataAction, self).__init__(attrs, **kwargs)
-
-    def get_link_url(self, datum):
-        image_id = self.table.get_object_id(datum)
-        self.attrs['ng-click'] = (
-            "modal.openMetadataModal('aggregate', '%s', true)" % image_id)
-        return "javascript:void(0);"
 
 
 class UpdateAggregateAction(tables.LinkAction):
@@ -109,7 +101,7 @@ def get_aggregate_hosts(aggregate):
 
 def get_metadata(aggregate):
     return [' = '.join([key, val]) for key, val
-            in aggregate.metadata.items()]
+            in six.iteritems(aggregate.metadata)]
 
 
 def get_available(zone):
@@ -133,7 +125,7 @@ def safe_unordered_list(value):
 
 
 class HostAggregatesTable(tables.DataTable):
-    name = tables.WrappingColumn('name', verbose_name=_('Name'))
+    name = tables.Column('name', verbose_name=_('Name'))
     availability_zone = tables.Column('availability_zone',
                                       verbose_name=_('Availability Zone'))
     hosts = tables.Column(get_aggregate_hosts,
@@ -145,9 +137,8 @@ class HostAggregatesTable(tables.DataTable):
                              wrap_list=True,
                              filters=(safe_unordered_list,))
 
-    class Meta(object):
+    class Meta:
         name = "host_aggregates"
-        hidden_title = False
         verbose_name = _("Host Aggregates")
         table_actions = (AggregateFilterAction,
                          CreateAggregateAction,
@@ -159,8 +150,8 @@ class HostAggregatesTable(tables.DataTable):
 
 
 class AvailabilityZonesTable(tables.DataTable):
-    name = tables.WrappingColumn('zoneName',
-                                 verbose_name=_('Availability Zone Name'))
+    name = tables.Column('zoneName',
+                         verbose_name=_('Availability Zone Name'))
     hosts = tables.Column(get_zone_hosts,
                           verbose_name=_('Hosts'),
                           wrap_list=True,
@@ -173,9 +164,8 @@ class AvailabilityZonesTable(tables.DataTable):
     def get_object_id(self, zone):
         return zone.zoneName
 
-    class Meta(object):
+    class Meta:
         name = "availability_zones"
-        hidden_title = False
         verbose_name = _("Availability Zones")
         table_actions = (AvailabilityZoneFilterAction,)
         multi_select = False

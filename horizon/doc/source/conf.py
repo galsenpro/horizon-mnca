@@ -24,17 +24,8 @@
 
 from __future__ import print_function
 
-import logging
 import os
 import sys
-
-import django
-
-# NOTE(amotoki): Sphinx 1.6.x catches warnings from imported modules.
-# Ignore warnings from openstack_dashboard.settings in the doc build.
-# This can be dropped once Sphinx correctly ignore such warnings.
-logging.getLogger('openstack_dashboard.settings').setLevel(logging.ERROR)
-
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(BASE_DIR, "..", ".."))
@@ -46,8 +37,107 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'openstack_dashboard.settings')
 
 import horizon.version
 
-django.setup()
 
+def write_autodoc_index():
+
+    def find_autodoc_modules(module_name, sourcedir):
+        """returns a list of modules in the SOURCE directory."""
+        modlist = []
+        os.chdir(os.path.join(sourcedir, module_name))
+        print("SEARCHING %s" % sourcedir)
+        for root, dirs, files in os.walk("."):
+            for filename in files:
+                if filename.endswith(".py"):
+                    # remove the pieces of the root
+                    elements = root.split(os.path.sep)
+                    # replace the leading "." with the module name
+                    elements[0] = module_name
+                    # and get the base module name
+                    base, extension = os.path.splitext(filename)
+                    if not (base == "__init__"):
+                        elements.append(base)
+                    result = ".".join(elements)
+                    # print result
+                    modlist.append(result)
+        return modlist
+
+    RSTDIR = os.path.abspath(os.path.join(BASE_DIR, "sourcecode"))
+    SRCS = {'horizon': ROOT,
+            'openstack_dashboard': ROOT}
+
+    EXCLUDED_MODULES = ('horizon.tests', 'openstack_dashboard.tests',)
+    CURRENT_SOURCES = {}
+
+    if not(os.path.exists(RSTDIR)):
+        os.mkdir(RSTDIR)
+    CURRENT_SOURCES[RSTDIR] = ['autoindex.rst']
+
+    INDEXOUT = open(os.path.join(RSTDIR, "autoindex.rst"), "w")
+    INDEXOUT.write("=================\n")
+    INDEXOUT.write("Source Code Index\n")
+    INDEXOUT.write("=================\n")
+
+    for modulename, path in SRCS.items():
+        sys.stdout.write("Generating source documentation for %s\n" %
+                         modulename)
+        INDEXOUT.write("\n%s\n" % modulename.capitalize())
+        INDEXOUT.write("%s\n" % ("=" * len(modulename),))
+        INDEXOUT.write(".. toctree::\n")
+        INDEXOUT.write("   :maxdepth: 1\n")
+        INDEXOUT.write("\n")
+
+        MOD_DIR = os.path.join(RSTDIR, modulename)
+        CURRENT_SOURCES[MOD_DIR] = []
+        if not(os.path.exists(MOD_DIR)):
+            os.mkdir(MOD_DIR)
+        for module in find_autodoc_modules(modulename, path):
+            if any([module.startswith(exclude) for exclude
+                   in EXCLUDED_MODULES]):
+                print("Excluded module %s." % module)
+                continue
+            mod_path = os.path.join(path, *module.split("."))
+            generated_file = os.path.join(MOD_DIR, "%s.rst" % module)
+
+            INDEXOUT.write("   %s/%s\n" % (modulename, module))
+
+            # Find the __init__.py module if this is a directory
+            if os.path.isdir(mod_path):
+                source_file = ".".join((os.path.join(mod_path, "__init__"),
+                                        "py",))
+            else:
+                source_file = ".".join((os.path.join(mod_path), "py"))
+
+            CURRENT_SOURCES[MOD_DIR].append("%s.rst" % module)
+            # Only generate a new file if the source has changed or we don't
+            # have a doc file to begin with.
+            if not os.access(generated_file, os.F_OK) or (
+                    os.stat(generated_file).st_mtime <
+                    os.stat(source_file).st_mtime):
+                print("Module %s updated, generating new documentation."
+                      % module)
+                FILEOUT = open(generated_file, "w")
+                header = "The :mod:`%s` Module" % module
+                FILEOUT.write("%s\n" % ("=" * len(header),))
+                FILEOUT.write("%s\n" % header)
+                FILEOUT.write("%s\n" % ("=" * len(header),))
+                FILEOUT.write(".. automodule:: %s\n" % module)
+                FILEOUT.write("  :members:\n")
+                FILEOUT.write("  :undoc-members:\n")
+                FILEOUT.write("  :show-inheritance:\n")
+                FILEOUT.write("  :noindex:\n")
+                FILEOUT.close()
+
+    INDEXOUT.close()
+
+    # Delete auto-generated .rst files for sources which no longer exist
+    for directory, subdirs, files in list(os.walk(RSTDIR)):
+        for old_file in files:
+            if old_file not in CURRENT_SOURCES.get(directory, []):
+                print("Removing outdated file for %s" % old_file)
+                os.remove(os.path.join(directory, old_file))
+
+
+write_autodoc_index()
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
@@ -65,15 +155,10 @@ django.setup()
 extensions = ['sphinx.ext.autodoc',
               'sphinx.ext.todo',
               'sphinx.ext.coverage',
+              'sphinx.ext.pngmath',
               'sphinx.ext.viewcode',
-              'openstackdocstheme',
+              'oslosphinx',
               ]
-
-# openstackdocstheme options
-repository_name = 'openstack/horizon'
-bug_project = 'horizon'
-bug_tag = 'documentation'
-html_last_updated_fmt = '%Y-%m-%d %H:%M'
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -133,7 +218,7 @@ show_authors = False
 pygments_style = 'sphinx'
 
 # A list of ignored prefixes for module index sorting.
-modindex_common_prefix = ['horizon.', 'openstack_dashboard.']
+# modindex_common_prefix = []
 
 primary_domain = 'py'
 nitpicky = False
@@ -144,7 +229,7 @@ nitpicky = False
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 # html_theme_path = ['.']
-html_theme = 'openstackdocs'
+# html_theme = '_theme'
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -175,11 +260,13 @@ html_theme_options = {
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = []
+html_static_path = ['_static']
 
 # If not '', a 'Last updated on:' timestamp is inserted at every page bottom,
 # using the given strftime format.
 # html_last_updated_fmt = '%b %d, %Y'
+git_cmd = "git log --pretty=format:'%ad, commit %h' --date=local -n1"
+html_last_updated_fmt = os.popen(git_cmd).read()
 
 # If true, SmartyPants will be used to convert quotes and dashes to
 # typographically correct entities.
@@ -220,6 +307,7 @@ html_static_path = []
 
 # Output file base name for HTML help builder.
 htmlhelp_basename = 'Horizondoc'
+
 
 # -- Options for LaTeX output -------------------------------------------------
 

@@ -16,12 +16,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from django.conf import settings
 from django.conf.urls import include
+from django.conf.urls import patterns
 from django.conf.urls import url
-from django.utils.translation import ugettext_lazy as _
 
-from horizon.browsers.views import AngularIndexView
 from openstack_dashboard.dashboards.project.images.images \
     import urls as image_urls
 from openstack_dashboard.dashboards.project.images.snapshots \
@@ -29,17 +27,9 @@ from openstack_dashboard.dashboards.project.images.snapshots \
 from openstack_dashboard.dashboards.project.images import views
 
 
-if settings.ANGULAR_FEATURES['images_panel']:
-    title = _("Images")
-    # New angular images
-    urlpatterns = [
-        url(r'^$', AngularIndexView.as_view(title=title), name='index'),
-        url(r'', include(image_urls, namespace='images')),
-        url(r'', include(snapshot_urls, namespace='snapshots')),
-    ]
-else:
-    urlpatterns = [
-        url(r'^$', views.IndexView.as_view(), name='index'),
-        url(r'', include(image_urls, namespace='images')),
-        url(r'', include(snapshot_urls, namespace='snapshots')),
-    ]
+urlpatterns = patterns(
+    '',
+    url(r'^$', views.IndexView.as_view(), name='index'),
+    url(r'', include(image_urls, namespace='images')),
+    url(r'', include(snapshot_urls, namespace='snapshots')),
+)

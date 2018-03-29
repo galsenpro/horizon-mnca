@@ -20,10 +20,12 @@ from django.utils.translation import ugettext_lazy as _
 
 import horizon
 
+from openstack_dashboard.dashboards.admin import dashboard
+
 
 class Info(horizon.Panel):
     name = _("System Information")
     slug = 'info'
-    policy_rules = (("compute", "context_is_admin"),
-                    ("volume", "context_is_admin"),
-                    ("network", "context_is_admin"),)
+
+
+dashboard.Admin.register(Info)

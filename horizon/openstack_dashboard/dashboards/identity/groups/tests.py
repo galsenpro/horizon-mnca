@@ -15,8 +15,8 @@
 from django.core.urlresolvers import reverse
 from django import http
 
-from mox3.mox import IgnoreArg
-from mox3.mox import IsA
+from mox import IgnoreArg  # noqa
+from mox import IsA  # noqa
 
 from openstack_dashboard import api
 from openstack_dashboard.test import helpers as test
@@ -43,15 +43,12 @@ class GroupsViewTests(test.BaseAdminViewTests):
                       if group.domain_id == domain_id]
         return groups
 
-    @test.create_stubs({api.keystone: ('domain_get',
-                                       'group_list',)})
+    @test.create_stubs({api.keystone: ('group_list',)})
     def test_index(self):
         domain_id = self._get_domain_id()
         groups = self._get_groups(domain_id)
-        filters = {}
-        api.keystone.group_list(IgnoreArg(),
-                                domain=domain_id,
-                                filters=filters) \
+
+        api.keystone.group_list(IgnoreArg(), domain=domain_id) \
             .AndReturn(groups)
 
         self.mox.ReplayAll()
@@ -68,43 +65,19 @@ class GroupsViewTests(test.BaseAdminViewTests):
         self.assertContains(res, 'Edit')
         self.assertContains(res, 'Delete Group')
 
-    @test.create_stubs({api.keystone: ('group_list',
-                                       'get_effective_domain_id')})
     def test_index_with_domain(self):
         domain = self.domains.get(id="1")
-        filters = {}
         self.setSessionValues(domain_context=domain.id,
                               domain_context_name=domain.name)
-        groups = self._get_groups(domain.id)
+        self.test_index()
 
-        api.keystone.group_list(IsA(http.HttpRequest),
-                                domain=domain.id,
-                                filters=filters).AndReturn(groups)
-
-        self.mox.ReplayAll()
-
-        res = self.client.get(GROUPS_INDEX_URL)
-
-        self.assertTemplateUsed(res, constants.GROUPS_INDEX_VIEW_TEMPLATE)
-        self.assertItemsEqual(res.context['table'].data, groups)
-        if domain.id:
-            for group in res.context['table'].data:
-                self.assertItemsEqual(group.domain_id, domain.id)
-
-        self.assertContains(res, 'Create Group')
-        self.assertContains(res, 'Edit')
-        self.assertContains(res, 'Delete Group')
-
-    @test.create_stubs({api.keystone: ('domain_get',
-                                       'group_list',
+    @test.create_stubs({api.keystone: ('group_list',
                                        'keystone_can_edit_group')})
     def test_index_with_keystone_can_edit_group_false(self):
         domain_id = self._get_domain_id()
         groups = self._get_groups(domain_id)
-        filters = {}
-        api.keystone.group_list(IgnoreArg(),
-                                domain=domain_id,
-                                filters=filters) \
+
+        api.keystone.group_list(IgnoreArg(), domain=domain_id) \
             .AndReturn(groups)
         api.keystone.keystone_can_edit_group() \
             .MultipleTimes().AndReturn(False)
@@ -120,15 +93,11 @@ class GroupsViewTests(test.BaseAdminViewTests):
         self.assertNotContains(res, 'Edit')
         self.assertNotContains(res, 'Delete Group')
 
-    @test.create_stubs({api.keystone: ('group_create',
-                                       'domain_get')})
+    @test.create_stubs({api.keystone: ('group_create', )})
     def test_create(self):
         domain_id = self._get_domain_id()
-        domain = self.domains.get(id="1")
         group = self.groups.get(id="1")
 
-        api.keystone.domain_get(IsA(http.HttpRequest), '1') \
-            .AndReturn(domain)
         api.keystone.group_create(IsA(http.HttpRequest),
                                   description=group.description,
                                   domain_id=domain_id,
@@ -144,28 +113,11 @@ class GroupsViewTests(test.BaseAdminViewTests):
         self.assertNoFormErrors(res)
         self.assertMessageCount(success=1)
 
-    @test.create_stubs({api.keystone: ('group_create',)})
     def test_create_with_domain(self):
-        domain = self.domains.get(id="3")
-        group = self.groups.get(id="1")
-
+        domain = self.domains.get(id="1")
         self.setSessionValues(domain_context=domain.id,
                               domain_context_name=domain.name)
-
-        api.keystone.group_create(IsA(http.HttpRequest),
-                                  description=group.description,
-                                  domain_id=domain.id,
-                                  name=group.name).AndReturn(group)
-
-        self.mox.ReplayAll()
-
-        formData = {'method': 'CreateGroupForm',
-                    'name': group.name,
-                    'description': group.description}
-        res = self.client.post(GROUP_CREATE_URL, formData)
-
-        self.assertNoFormErrors(res)
-        self.assertMessageCount(success=1)
+        self.test_create()
 
     @test.create_stubs({api.keystone: ('group_get',
                                        'group_update')})
@@ -190,17 +142,13 @@ class GroupsViewTests(test.BaseAdminViewTests):
 
         self.assertNoFormErrors(res)
 
-    @test.create_stubs({api.keystone: ('domain_get',
-                                       'group_list',
+    @test.create_stubs({api.keystone: ('group_list',
                                        'group_delete')})
     def test_delete_group(self):
         domain_id = self._get_domain_id()
-        filters = {}
         group = self.groups.get(id="2")
 
-        api.keystone.group_list(IgnoreArg(),
-                                domain=domain_id,
-                                filters=filters) \
+        api.keystone.group_list(IgnoreArg(), domain=domain_id) \
             .AndReturn(self.groups.list())
         api.keystone.group_delete(IgnoreArg(), group.id)
 
@@ -211,27 +159,17 @@ class GroupsViewTests(test.BaseAdminViewTests):
 
         self.assertRedirectsNoFollow(res, GROUPS_INDEX_URL)
 
-    @test.create_stubs({api.keystone: ('get_effective_domain_id',
-                                       'group_get',
+    @test.create_stubs({api.keystone: ('group_get',
                                        'user_list',)})
     def test_manage(self):
         group = self.groups.get(id="1")
         group_members = self.users.list()
-        domain_id = self._get_domain_id()
 
         api.keystone.group_get(IsA(http.HttpRequest), group.id).\
             AndReturn(group)
-
-        if api.keystone.VERSIONS.active >= 3:
-            api.keystone.get_effective_domain_id(
-                IgnoreArg()).AndReturn(domain_id)
-            api.keystone.user_list(
-                IgnoreArg(), group=group.id, domain=domain_id).AndReturn(
-                group_members)
-
-        else:
-            api.keystone.user_list(
-                IgnoreArg(), group=group.id).AndReturn(group_members)
+        api.keystone.user_list(IgnoreArg(),
+                               group=group.id).\
+            AndReturn(group_members)
         self.mox.ReplayAll()
 
         res = self.client.get(GROUP_MANAGE_URL)
@@ -239,25 +177,15 @@ class GroupsViewTests(test.BaseAdminViewTests):
         self.assertTemplateUsed(res, constants.GROUPS_MANAGE_VIEW_TEMPLATE)
         self.assertItemsEqual(res.context['table'].data, group_members)
 
-    @test.create_stubs({api.keystone: ('get_effective_domain_id',
-                                       'user_list',
+    @test.create_stubs({api.keystone: ('user_list',
                                        'remove_group_user')})
     def test_remove_user(self):
         group = self.groups.get(id="1")
         user = self.users.get(id="2")
-        domain_id = self._get_domain_id()
 
-        if api.keystone.VERSIONS.active >= 3:
-            api.keystone.get_effective_domain_id(
-                IgnoreArg()).AndReturn(domain_id)
-
-            api.keystone.user_list(
-                IgnoreArg(), group=group.id, domain=domain_id).AndReturn(
-                self.users.list())
-        else:
-            api.keystone.user_list(
-                IgnoreArg(), group=group.id).AndReturn(self.users.list())
-
+        api.keystone.user_list(IgnoreArg(),
+                               group=group.id).\
+            AndReturn(self.users.list())
         api.keystone.remove_group_user(IgnoreArg(),
                                        group_id=group.id,
                                        user_id=user.id)
@@ -269,24 +197,20 @@ class GroupsViewTests(test.BaseAdminViewTests):
         self.assertRedirectsNoFollow(res, GROUP_MANAGE_URL)
         self.assertMessageCount(success=1)
 
-    @test.create_stubs({api.keystone: ('get_effective_domain_id',
-                                       'group_get',
+    @test.create_stubs({api.keystone: ('group_get',
                                        'user_list',
                                        'add_group_user')})
     def test_add_user(self):
         group = self.groups.get(id="1")
         user = self.users.get(id="2")
-        domain_id = group.domain_id
-
-        api.keystone.get_effective_domain_id(IgnoreArg()).AndReturn(domain_id)
 
         api.keystone.group_get(IsA(http.HttpRequest), group.id).\
             AndReturn(group)
-
-        api.keystone.user_list(IgnoreArg(), domain=domain_id).\
+        api.keystone.user_list(IgnoreArg(),
+                               domain=group.domain_id).\
             AndReturn(self.users.list())
-
-        api.keystone.user_list(IgnoreArg(), domain=domain_id, group=group.id).\
+        api.keystone.user_list(IgnoreArg(),
+                               group=group.id).\
             AndReturn(self.users.list()[2:])
 
         api.keystone.add_group_user(IgnoreArg(),
@@ -295,15 +219,8 @@ class GroupsViewTests(test.BaseAdminViewTests):
 
         self.mox.ReplayAll()
 
-        formData = {'action': 'group_non_members__add__%s' % user.id}
+        formData = {'action': 'group_non_members__addMember__%s' % user.id}
         res = self.client.post(GROUP_ADD_MEMBER_URL, formData)
 
         self.assertRedirectsNoFollow(res, GROUP_MANAGE_URL)
         self.assertMessageCount(success=1)
-
-    @test.update_settings(FILTER_DATA_FIRST={'identity.groups': True})
-    def test_index_with_filter_first(self):
-        res = self.client.get(GROUPS_INDEX_URL)
-        self.assertTemplateUsed(res, constants.GROUPS_INDEX_VIEW_TEMPLATE)
-        groups = res.context['table'].data
-        self.assertItemsEqual(groups, [])

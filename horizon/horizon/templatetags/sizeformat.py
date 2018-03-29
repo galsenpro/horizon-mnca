@@ -20,8 +20,6 @@
 Template tags for displaying sizes
 """
 
-from oslo_utils import units
-
 from django import template
 from django.utils import formats
 from django.utils.translation import ugettext_lazy as _
@@ -51,27 +49,24 @@ def filesizeformat(bytes, filesize_number_format):
         return ungettext_lazy("%(size)d Byte",
                               "%(size)d Bytes", 0) % {'size': 0}
 
-    if bytes == float('inf'):
-        return _('Infinity')
-    if bytes < units.Ki:
+    if bytes < 1024:
         bytes = int(bytes)
         return ungettext_lazy("%(size)d Byte",
                               "%(size)d Bytes", bytes) % {'size': bytes}
-    if bytes < units.Mi:
-        return _("%s KB") % filesize_number_format(bytes / units.Ki)
-    if bytes < units.Gi:
-        return _("%s MB") % filesize_number_format(bytes / units.Mi)
-    if bytes < units.Ti:
-        return _("%s GB") % filesize_number_format(bytes / units.Gi)
-    if bytes < units.Pi:
-        return _("%s TB") % filesize_number_format(bytes / units.Ti)
-    if bytes < units.Ei:
-        return _("%s PB") % filesize_number_format(bytes / units.Pi)
-    if bytes < units.Zi:
-        return _("%s EB") % filesize_number_format(bytes / units.Ei)
-    if bytes < units.Yi:
-        return _("%s ZB") % filesize_number_format(bytes / units.Zi)
-    return _("%s YB") % filesize_number_format(bytes / units.Yi)
+    if bytes < 1024 * 1024:
+        return _("%s KB") % \
+            filesize_number_format(bytes / 1024)
+    if bytes < 1024 * 1024 * 1024:
+        return _("%s MB") % \
+            filesize_number_format(bytes / (1024 * 1024))
+    if bytes < 1024 * 1024 * 1024 * 1024:
+        return _("%s GB") % \
+            filesize_number_format(bytes / (1024 * 1024 * 1024))
+    if bytes < 1024 * 1024 * 1024 * 1024 * 1024:
+        return _("%s TB") % \
+            filesize_number_format(bytes / (1024 * 1024 * 1024 * 1024))
+    return _("%s PB") % \
+        filesize_number_format(bytes / (1024 * 1024 * 1024 * 1024 * 1024))
 
 
 def float_cast_filesizeformat(value, multiplier=1, format=int_format):
@@ -85,14 +80,14 @@ def float_cast_filesizeformat(value, multiplier=1, format=int_format):
 
 @register.filter(name='mbformat')
 def mbformat(mb):
-    return float_cast_filesizeformat(mb, units.Mi, int_format)
+    return float_cast_filesizeformat(mb, 1024 * 1024, int_format)
 
 
 @register.filter(name='mb_float_format')
 def mb_float_format(mb):
-    return float_cast_filesizeformat(mb, units.Mi, float_format)
+    return float_cast_filesizeformat(mb, 1024 * 1024, float_format)
 
 
 @register.filter(name='diskgbformat')
 def diskgbformat(gb):
-    return float_cast_filesizeformat(gb, units.Gi, float_format)
+    return float_cast_filesizeformat(gb, 1024 * 1024 * 1024, float_format)

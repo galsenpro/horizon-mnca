@@ -20,7 +20,7 @@ from django.utils.translation import ugettext_lazy as _
 
 import horizon
 
-from openstack_dashboard.api import keystone
+from openstack_dashboard.dashboards.identity import dashboard
 
 
 class Users(horizon.Panel):
@@ -29,8 +29,5 @@ class Users(horizon.Panel):
     policy_rules = (("identity", "identity:get_user"),
                     ("identity", "identity:list_users"))
 
-    def can_access(self, context):
-        if keystone.is_multi_domain_enabled() \
-                and not keystone.is_domain_admin(context['request']):
-            return False
-        return super(Users, self).can_access(context)
+
+dashboard.Identity.register(Users)

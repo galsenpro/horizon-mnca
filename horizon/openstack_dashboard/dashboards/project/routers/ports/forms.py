@@ -26,12 +26,18 @@ LOG = logging.getLogger(__name__)
 
 
 class AddInterface(forms.SelfHandlingForm):
-    subnet_id = forms.ThemableChoiceField(label=_("Subnet"))
+    subnet_id = forms.ChoiceField(label=_("Subnet"))
     ip_address = forms.IPField(
         label=_("IP Address (optional)"), required=False, initial="",
         help_text=_("Specify an IP address for the interface "
                     "created (e.g. 192.168.0.254)."),
         version=forms.IPv4 | forms.IPv6, mask=False)
+    router_name = forms.CharField(label=_("Router Name"),
+                                  widget=forms.TextInput(
+                                      attrs={'readonly': 'readonly'}))
+    router_id = forms.CharField(label=_("Router ID"),
+                                widget=forms.TextInput(
+                                    attrs={'readonly': 'readonly'}))
     failure_url = 'horizon:project:routers:detail'
 
     def __init__(self, request, *args, **kwargs):
@@ -42,19 +48,14 @@ class AddInterface(forms.SelfHandlingForm):
     def populate_subnet_id_choices(self, request):
         tenant_id = self.request.user.tenant_id
         networks = []
-        router_subnet_ids = []
-        router_id = self.initial['router_id']
-
         try:
             networks = api.neutron.network_list_for_tenant(request, tenant_id)
-            if router_id:
-                ports = api.neutron.port_list(request, device_id=router_id)
-                router_subnet_ids = [fixed_ip["subnet_id"] for port in ports
-                                     for fixed_ip in port.fixed_ips]
         except Exception as e:
-            LOG.info('Failed to get network list: %s', e)
-            msg = _('Failed to get network list: %s') % e
+            msg = _('Failed to get network list %s') % e
+            LOG.info(msg)
             messages.error(request, msg)
+            router_id = request.REQUEST.get('router_id',
+                                            self.initial.get('router_id'))
             if router_id:
                 redirect = reverse(self.failure_url, args=[router_id])
             else:
@@ -68,9 +69,7 @@ class AddInterface(forms.SelfHandlingForm):
             choices += [(subnet.id,
                          '%s%s (%s)' % (net_name, subnet.cidr,
                                         subnet.name or subnet.id))
-                        for subnet in n['subnets']
-                        if subnet.id not in router_subnet_ids
-                        and subnet.gateway_ip]
+                        for subnet in n['subnets']]
         if choices:
             choices.insert(0, ("", _("Select Subnet")))
         else:
@@ -85,11 +84,12 @@ class AddInterface(forms.SelfHandlingForm):
         msg = _('Interface added')
         if port:
             msg += ' ' + port.fixed_ips[0]['ip_address']
+        LOG.debug(msg)
         messages.success(request, msg)
         return True
 
     def _add_interface_by_subnet(self, request, data):
-        router_id = self.initial['router_id']
+        router_id = data['router_id']
         try:
             router_inf = api.neutron.router_add_interface(
                 request, router_id, subnet_id=data['subnet_id'])
@@ -104,7 +104,7 @@ class AddInterface(forms.SelfHandlingForm):
         return port
 
     def _add_interface_by_port(self, request, data):
-        router_id = self.initial['router_id']
+        router_id = data['router_id']
         subnet_id = data['subnet_id']
         try:
             subnet = api.neutron.subnet_get(request, subnet_id)
@@ -128,48 +128,42 @@ class AddInterface(forms.SelfHandlingForm):
         return port
 
     def _handle_error(self, request, router_id, reason):
-        LOG.info('Failed to add_interface: %s', reason)
-        msg = _('Failed to add interface: %s') % reason
+        msg = _('Failed to add_interface: %s') % reason
+        LOG.info(msg)
         redirect = reverse(self.failure_url, args=[router_id])
         exceptions.handle(request, msg, redirect=redirect)
 
     def _delete_port(self, request, port):
         try:
             api.neutron.port_delete(request, port.id)
-        except Exception as e:
-            LOG.info('Failed to delete port %(id)s: %(exc)s',
-                     {'id': port.id, 'exc': e})
+        except Exception:
             msg = _('Failed to delete port %s') % port.id
+            LOG.info(msg)
             exceptions.handle(request, msg)
 
 
 class SetGatewayForm(forms.SelfHandlingForm):
-    network_id = forms.ThemableChoiceField(label=_("External Network"))
-    enable_snat = forms.BooleanField(label=_("Enable SNAT"),
-                                     initial=True,
-                                     required=False)
+    network_id = forms.ChoiceField(label=_("External Network"))
+    router_name = forms.CharField(label=_("Router Name"),
+                                  widget=forms.TextInput(
+                                      attrs={'readonly': 'readonly'}))
+    router_id = forms.CharField(label=_("Router ID"),
+                                widget=forms.TextInput(
+                                    attrs={'readonly': 'readonly'}))
     failure_url = 'horizon:project:routers:index'
 
     def __init__(self, request, *args, **kwargs):
         super(SetGatewayForm, self).__init__(request, *args, **kwargs)
-        networks = self.populate_network_id_choices(request)
-        self.fields['network_id'].choices = networks
-        self.ext_gw_mode = api.neutron.is_extension_supported(
-            self.request, 'ext-gw-mode')
-        self.enable_snat_allowed = api.neutron.get_feature_permission(
-            self.request,
-            "ext-gw-mode",
-            "update_router_enable_snat")
-        if not self.ext_gw_mode or not self.enable_snat_allowed:
-            del self.fields['enable_snat']
+        c = self.populate_network_id_choices(request)
+        self.fields['network_id'].choices = c
 
     def populate_network_id_choices(self, request):
         search_opts = {'router:external': True}
         try:
             networks = api.neutron.network_list(request, **search_opts)
         except Exception as e:
-            LOG.info('Failed to get network list: %s', e)
-            msg = _('Failed to get network list: %s') % e
+            msg = _('Failed to get network list %s') % e
+            LOG.info(msg)
             messages.error(request, msg)
             redirect = reverse(self.failure_url)
             exceptions.handle(request, msg, redirect=redirect)
@@ -184,19 +178,15 @@ class SetGatewayForm(forms.SelfHandlingForm):
 
     def handle(self, request, data):
         try:
-            enable_snat = None
-            if 'enable_snat' in data:
-                enable_snat = data['enable_snat']
             api.neutron.router_add_gateway(request,
-                                           self.initial['router_id'],
-                                           data['network_id'],
-                                           enable_snat)
+                                           data['router_id'],
+                                           data['network_id'])
             msg = _('Gateway interface is added')
+            LOG.debug(msg)
             messages.success(request, msg)
             return True
         except Exception as e:
-            LOG.info('Failed to set gateway to router %(id)s: %(exc)s',
-                     {'id': self.initial['router_id'], 'exc': e})
-            msg = _('Failed to set gateway: %s') % e
+            msg = _('Failed to set gateway %s') % e
+            LOG.info(msg)
             redirect = reverse(self.failure_url)
             exceptions.handle(request, msg, redirect=redirect)

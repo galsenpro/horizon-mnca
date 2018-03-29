@@ -14,14 +14,15 @@ from django.template import defaultfilters
 from django.utils.translation import ugettext_lazy as _
 from django.utils.translation import ungettext_lazy
 
-from horizon import forms
+from horizon import messages
 from horizon import tables
+
 from openstack_dashboard import api
 from openstack_dashboard import policy
 
+
 ENABLE = 0
 DISABLE = 1
-KEYSTONE_V2_ENABLED = api.keystone.VERSIONS.active < 3
 
 
 class CreateUserLink(tables.LinkAction):
@@ -47,19 +48,7 @@ class EditUserLink(policy.PolicyTargetMixin, tables.LinkAction):
     icon = "pencil"
     policy_rules = (("identity", "identity:update_user"),
                     ("identity", "identity:list_projects"),)
-    policy_target_attrs = (("user_id", "id"),
-                           ("target.user.domain_id", "domain_id"),)
-
-    def allowed(self, request, user):
-        return api.keystone.keystone_can_edit_user()
-
-
-class ChangePasswordLink(tables.LinkAction):
-    name = "change_password"
-    verbose_name = _("Change Password")
-    url = "horizon:identity:users:change_password"
-    classes = ("ajax-modal",)
-    icon = "key"
+    policy_target_attrs = (("user_id", "id"),)
 
     def allowed(self, request, user):
         return api.keystone.keystone_can_edit_user()
@@ -99,12 +88,10 @@ class ToggleEnabled(policy.PolicyTargetMixin, tables.BatchAction):
         )
     classes = ("btn-toggle",)
     policy_rules = (("identity", "identity:update_user"),)
-    policy_target_attrs = (("user_id", "id"),
-                           ("target.user.domain_id", "domain_id"))
+    policy_target_attrs = (("user_id", "id"),)
 
     def allowed(self, request, user=None):
-        if (not api.keystone.keystone_can_edit_user() or
-                user.id == request.user.id):
+        if not api.keystone.keystone_can_edit_user():
             return False
 
         self.enabled = True
@@ -117,7 +104,16 @@ class ToggleEnabled(policy.PolicyTargetMixin, tables.BatchAction):
             self.current_present_action = ENABLE
         return True
 
+    def update(self, request, user=None):
+        super(ToggleEnabled, self).update(request, user)
+        if user and user.id == request.user.id:
+            self.attrs["disabled"] = "disabled"
+
     def action(self, request, obj_id):
+        if obj_id == request.user.id:
+            messages.info(request, _('You cannot disable the user you are '
+                                     'currently logged in as.'))
+            return
         if self.enabled:
             api.keystone.user_update_enabled(request, obj_id, False)
             self.current_past_action = DISABLE
@@ -126,7 +122,7 @@ class ToggleEnabled(policy.PolicyTargetMixin, tables.BatchAction):
             self.current_past_action = ENABLE
 
 
-class DeleteUsersAction(policy.PolicyTargetMixin, tables.DeleteAction):
+class DeleteUsersAction(tables.DeleteAction):
     @staticmethod
     def action_present(count):
         return ungettext_lazy(
@@ -155,21 +151,12 @@ class DeleteUsersAction(policy.PolicyTargetMixin, tables.DeleteAction):
 
 
 class UserFilterAction(tables.FilterAction):
-    if api.keystone.VERSIONS.active < 3:
-        filter_type = "query"
-    else:
-        filter_type = "server"
-        filter_choices = (("name", _("User Name ="), True),
-                          ("id", _("User ID ="), True),
-                          ("enabled", _("Enabled ="), True, _('e.g. Yes/No')))
-
-
-class UpdateRow(tables.Row):
-    ajax = True
-
-    def get_data(self, request, user_id):
-        user_info = api.keystone.user_get(request, user_id, admin=True)
-        return user_info
+    def filter(self, table, users, filter_string):
+        """Naive case-insensitive search."""
+        q = filter_string.lower()
+        return [user for user in users
+                if q in user.name.lower()
+                or q in getattr(user, 'email', '').lower()]
 
 
 class UsersTable(tables.DataTable):
@@ -177,19 +164,8 @@ class UsersTable(tables.DataTable):
         ("true", True),
         ("false", False)
     )
-    name = tables.WrappingColumn('name',
-                                 link="horizon:identity:users:detail",
-                                 verbose_name=_('User Name'),
-                                 form_field=forms.CharField(required=False))
-    description = tables.Column(lambda obj: getattr(obj, 'description', None),
-                                verbose_name=_('Description'),
-                                hidden=KEYSTONE_V2_ENABLED,
-                                form_field=forms.CharField(
-                                    widget=forms.Textarea(attrs={'rows': 4}),
-                                    required=False))
-    email = tables.Column(lambda obj: getattr(obj, 'email', None),
-                          verbose_name=_('Email'),
-                          form_field=forms.EmailField(required=False),
+    name = tables.Column('name', verbose_name=_('User Name'))
+    email = tables.Column('email', verbose_name=_('Email'),
                           filters=(lambda v: defaultfilters
                                    .default_if_none(v, ""),
                                    defaultfilters.escape,
@@ -197,25 +173,15 @@ class UsersTable(tables.DataTable):
                           )
     # Default tenant is not returned from Keystone currently.
     # default_tenant = tables.Column('default_tenant',
-    #                                verbose_name=_('Default Project'))
-    id = tables.Column('id', verbose_name=_('User ID'),
-                       attrs={'data-type': 'uuid'})
+    #                               verbose_name=_('Default Project'))
+    id = tables.Column('id', verbose_name=_('User ID'))
     enabled = tables.Column('enabled', verbose_name=_('Enabled'),
                             status=True,
                             status_choices=STATUS_CHOICES,
-                            filters=(defaultfilters.yesno,
-                                     defaultfilters.capfirst),
                             empty_value="False")
 
-    if api.keystone.VERSIONS.active >= 3:
-        domain_name = tables.Column('domain_name',
-                                    verbose_name=_('Domain Name'),
-                                    attrs={'data-type': 'uuid'})
-
-    class Meta(object):
+    class Meta:
         name = "users"
         verbose_name = _("Users")
-        row_actions = (EditUserLink, ChangePasswordLink, ToggleEnabled,
-                       DeleteUsersAction)
+        row_actions = (EditUserLink, ToggleEnabled, DeleteUsersAction)
         table_actions = (UserFilterAction, CreateUserLink, DeleteUsersAction)
-        row_class = UpdateRow

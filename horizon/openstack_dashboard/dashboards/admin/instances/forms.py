@@ -28,9 +28,8 @@ class LiveMigrateForm(forms.SelfHandlingForm):
                                    required=False,
                                    widget=forms.TextInput(
                                        attrs={'readonly': 'readonly'}))
-    host = forms.ThemableChoiceField(
-        label=_("New Host"),
-        help_text=_("Choose a Host to migrate to."))
+    host = forms.ChoiceField(label=_("New Host"),
+                             help_text=_("Choose a Host to migrate to."))
     disk_over_commit = forms.BooleanField(label=_("Disk Over Commit"),
                                           initial=False, required=False)
     block_migration = forms.BooleanField(label=_("Block Migration"),
@@ -54,31 +53,26 @@ class LiveMigrateForm(forms.SelfHandlingForm):
                      if (host.service.startswith('compute') and
                          host.host_name != current_host)]
         if host_list:
-            host_list.insert(0, ("AUTO_SCHEDULE",
-                                 _("Automatically schedule new host.")))
+            host_list.insert(0, ("", _("Select a new host")))
         else:
-            host_list.insert(0, ("", _("No other hosts available")))
+            host_list.insert(0, ("", _("No other hosts available.")))
         return sorted(host_list)
 
     def handle(self, request, data):
         try:
             block_migration = data['block_migration']
             disk_over_commit = data['disk_over_commit']
-            host = None if data['host'] == 'AUTO_SCHEDULE' else data['host']
             api.nova.server_live_migrate(request,
                                          data['instance_id'],
-                                         host,
+                                         data['host'],
                                          block_migration=block_migration,
                                          disk_over_commit=disk_over_commit)
             msg = _('The instance is preparing the live migration '
-                    'to a new host.')
-            messages.info(request, msg)
+                    'to host "%s".') % data['host']
+            messages.success(request, msg)
             return True
         except Exception:
-            if data['host']:
-                msg = _('Failed to live migrate instance to '
-                        'host "%s".') % data['host']
-            else:
-                msg = _('Failed to live migrate instance to a new host.')
+            msg = _('Failed to live migrate instance to '
+                    'host "%s".') % data['host']
             redirect = reverse('horizon:admin:instances:index')
             exceptions.handle(request, msg, redirect=redirect)

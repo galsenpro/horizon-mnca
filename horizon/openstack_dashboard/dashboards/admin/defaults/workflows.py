@@ -12,7 +12,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import logging
 
 from django.utils.translation import ugettext_lazy as _
 
@@ -20,11 +19,12 @@ from horizon import exceptions
 from horizon import forms
 from horizon import workflows
 
+from openstack_dashboard.api import base
 from openstack_dashboard.api import cinder
 from openstack_dashboard.api import nova
 from openstack_dashboard.usage import quotas
 
-LOG = logging.getLogger(__name__)
+ALL_NOVA_QUOTA_FIELDS = quotas.NOVA_QUOTA_FIELDS + quotas.MISSING_QUOTA_FIELDS
 
 
 class UpdateDefaultQuotasAction(workflows.Action):
@@ -35,16 +35,21 @@ class UpdateDefaultQuotasAction(workflows.Action):
     metadata_items = forms.IntegerField(min_value=-1,
                                         label=_("Metadata Items"))
     ram = forms.IntegerField(min_value=-1, label=_("RAM (MB)"))
+    floating_ips = forms.IntegerField(min_value=-1, label=_("Floating IPs"))
     key_pairs = forms.IntegerField(min_value=-1, label=_("Key Pairs"))
     injected_file_path_bytes = forms.IntegerField(min_value=-1,
                                                   label=ifpb_label)
     instances = forms.IntegerField(min_value=-1, label=_("Instances"))
+    security_group_rules = forms.IntegerField(min_value=-1,
+                                              label=_("Security Group Rules"))
     injected_files = forms.IntegerField(min_value=-1,
                                         label=_("Injected Files"))
     cores = forms.IntegerField(min_value=-1, label=_("VCPUs"))
+    security_groups = forms.IntegerField(min_value=-1,
+                                         label=_("Security Groups"))
     gigabytes = forms.IntegerField(
         min_value=-1,
-        label=_("Total Size of Volumes and Snapshots (GiB)"))
+        label=_("Total Size of Volumes and Snapshots (GB)"))
     snapshots = forms.IntegerField(min_value=-1, label=_("Volume Snapshots"))
     volumes = forms.IntegerField(min_value=-1, label=_("Volumes"))
 
@@ -58,7 +63,7 @@ class UpdateDefaultQuotasAction(workflows.Action):
                 self.fields[field].required = False
                 self.fields[field].widget = forms.HiddenInput()
 
-    class Meta(object):
+    class Meta:
         name = _("Default Quotas")
         slug = 'update_default_quotas'
         help_text = _("From here you can update the default quotas "
@@ -67,7 +72,7 @@ class UpdateDefaultQuotasAction(workflows.Action):
 
 class UpdateDefaultQuotasStep(workflows.Step):
     action_class = UpdateDefaultQuotasAction
-    contributes = quotas.QUOTA_FIELDS
+    contributes = (quotas.QUOTA_FIELDS + quotas.MISSING_QUOTA_FIELDS)
 
 
 class UpdateDefaultQuotas(workflows.Workflow):
@@ -81,49 +86,16 @@ class UpdateDefaultQuotas(workflows.Workflow):
 
     def handle(self, request, data):
         # Update the default quotas.
-        nova_data = {
-            key: value for key, value in data.items()
-            if key in quotas.NOVA_QUOTA_FIELDS
-        }
-        is_error_nova = False
-        is_error_cinder = False
-        is_volume_service_enabled = cinder.is_volume_service_enabled(request)
-
-        # Update the default quotas for nova.
+        # `fixed_ips` update for quota class is not supported by novaclient
+        nova_data = dict([(key, data[key]) for key in ALL_NOVA_QUOTA_FIELDS
+                         if key != 'fixed_ips'])
         try:
             nova.default_quota_update(request, **nova_data)
-        except Exception:
-            is_error_nova = True
 
-        # Update the default quotas for cinder.
-        if is_volume_service_enabled:
-            cinder_data = {
-                key: value for key, value in data.items()
-                if key in quotas.CINDER_QUOTA_FIELDS
-            }
-            try:
+            if base.is_service_enabled(request, 'volume'):
+                cinder_data = dict([(key, data[key]) for key in
+                                    quotas.CINDER_QUOTA_FIELDS])
                 cinder.default_quota_update(request, **cinder_data)
-            except Exception:
-                is_error_cinder = True
-        else:
-            LOG.debug('Unable to update Cinder default quotas'
-                      ' because the Cinder volume service is disabled.')
-
-        # Analyze errors (if any) to determine what success and error messages
-        # to display to the user.
-        if is_error_nova and not is_error_cinder:
-            if is_volume_service_enabled:
-                self.success_message = _('Default quotas updated for Cinder.')
-                exceptions.handle(request,
-                                  _('Unable to update default quotas'
-                                    ' for Nova.'))
-            else:
-                return False
-        elif is_error_cinder and not is_error_nova:
-            self.success_message = _('Default quotas updated for Nova.')
-            exceptions.handle(request,
-                              _('Unable to update default quotas for Cinder.'))
-        elif is_error_nova and is_error_cinder:
-            return False
-
+        except Exception:
+            exceptions.handle(request, _('Unable to update default quotas.'))
         return True

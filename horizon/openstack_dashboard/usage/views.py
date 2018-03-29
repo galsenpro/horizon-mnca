@@ -10,7 +10,6 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-from django.utils.translation import pgettext_lazy
 from django.utils.translation import ugettext_lazy as _
 
 from horizon import exceptions
@@ -21,9 +20,8 @@ from openstack_dashboard.usage import base
 
 class UsageView(tables.DataTableView):
     usage_class = None
-    show_deleted = True
+    show_terminated = True
     csv_template_name = None
-    page_title = _("Overview")
 
     def __init__(self, *args, **kwargs):
         super(UsageView, self).__init__(*args, **kwargs)
@@ -48,6 +46,7 @@ class UsageView(tables.DataTableView):
                                          self.request.user.tenant_id)
             self.usage = self.usage_class(self.request, project_id)
             self.usage.summarize(*self.usage.get_date_range())
+            self.usage.get_limits()
             self.kwargs['usage'] = self.usage
             return self.usage.usage_list
         except Exception:
@@ -60,7 +59,6 @@ class UsageView(tables.DataTableView):
         context['table'].kwargs['usage'] = self.usage
         context['form'] = self.usage.form
         context['usage'] = self.usage
-
         try:
             context['simple_tenant_usage_enabled'] = \
                 api.nova.extension_supported('SimpleTenantUsage', self.request)
@@ -74,62 +72,9 @@ class UsageView(tables.DataTableView):
             response_kwargs.setdefault("filename", "usage.csv")
         else:
             render_class = self.response_class
-        context = self.render_context_with_title(context)
         resp = render_class(request=self.request,
                             template=self.get_template_names(),
                             context=context,
                             content_type=self.get_content_type(),
                             **response_kwargs)
         return resp
-
-
-class ProjectUsageView(UsageView):
-
-    def _get_charts_data(self):
-        charts = []
-
-        # (Used key, Max key, Human Readable Name, text to display when
-        # describing the quota by default it is 'Used')
-        types = [("totalInstancesUsed", "maxTotalInstances", _("Instances")),
-                 ("totalCoresUsed", "maxTotalCores", _("VCPUs")),
-                 ("totalRAMUsed", "maxTotalRAMSize", _("RAM")),
-                 ("totalFloatingIpsUsed", "maxTotalFloatingIps",
-                  _("Floating IPs"),
-                  pgettext_lazy('Label in the limit summary', "Allocated")),
-                 ("totalSecurityGroupsUsed", "maxSecurityGroups",
-                  _("Security Groups"))]
-        # Check for volume usage
-        if 'totalVolumesUsed' in self.usage.limits and self.usage.limits[
-                'totalVolumesUsed'] >= 0:
-            types.append(("totalVolumesUsed", "maxTotalVolumes",
-                         _("Volumes")))
-            types.append(("totalGigabytesUsed", "maxTotalVolumeGigabytes",
-                         _("Volume Storage")))
-        for t in types:
-            if t[0] in self.usage.limits and t[1] in self.usage.limits:
-                text = pgettext_lazy('Label in the limit summary', 'Used')
-                if len(t) > 3:
-                    text = t[3]
-                charts.append({
-                    'type': t[0],
-                    'name': t[2],
-                    'used': self.usage.limits[t[0]],
-                    'max': self.usage.limits[t[1]],
-                    'text': text
-                })
-
-        return charts
-
-    def get_context_data(self, **kwargs):
-        context = super(ProjectUsageView, self).get_context_data(**kwargs)
-        context['charts'] = self._get_charts_data()
-        return context
-
-    def get_data(self):
-        data = super(ProjectUsageView, self).get_data()
-        try:
-            self.usage.get_limits()
-        except Exception:
-            exceptions.handle(self.request,
-                              _('Unable to retrieve limits information.'))
-        return data
