@@ -23,3 +23,12 @@ urlpatterns = patterns(
     url(r'^services', views.ServicesIdasView.as_view(), name='services'),
 
     )
+"""
+from rest_framework import routers
+from drf_demo.model_less.views import ServiceViewSet
+
+router = routers.DefaultRouter()
+router.register(r'services', ServiceViewSet, base_name='services')
+urlpatterns = router.urls
+
+"""

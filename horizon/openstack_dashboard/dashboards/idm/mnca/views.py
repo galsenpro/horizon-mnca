@@ -16,15 +16,14 @@
 from horizon import tabs, views
 from openstack_dashboard.dashboards.idm.mnca  import tabs as idm_tabs
 import requests
+from rest_framework.response import Response
+from rest_framework import viewsets, status
+from . import serializers
+from . import Service
 
-class IndexView(views.APIView):
-    # A very simple class-based view...
-    template_name = 'mnca/index.html'
-
-    def get_data(self, request, context, *args, **kwargs):
-        # Add data to the context here...
-        context['panel_name'] = "mnca"
-        return context
+services = {
+    1: Service(id=1, service='nca', subservice='subnca', resource='/iot/d')
+}
 
 """    Retrieves services """
 class ServicesIdasView(views.APIView):
@@ -75,6 +74,84 @@ class ServicesIdasView(views.APIView):
         context['result'] = allServices
         context['panel_name'] = 'MNCA'
         return context
+
+def get_next_service_id():
+    return max(services) + 1
+
+
+class serviceViewSet(viewsets.ViewSet):
+    # Required for the Browsable API renderer to have a nice form.
+    serializer_class = serializers.serviceSerializer
+
+    def list(self, request):
+        serializer = serializers.serviceSerializer(
+            instance=services.values(), many=True)
+        return Response(serializer.data)
+
+    def create(self, request):
+        serializer = serializers.serviceSerializer(data=request.data)
+        if serializer.is_valid():
+            service = serializer.save()
+            service.id = get_next_service_id()
+            services[service.id] = service
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def retrieve(self, request, pk=None):
+        try:
+            service = services[int(pk)]
+        except KeyError:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        except ValueError:
+            return Response(status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = serializers.serviceSerializer(instance=service)
+        return Response(serializer.data)
+
+    def update(self, request, pk=None):
+        try:
+            service = services[int(pk)]
+        except KeyError:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        except ValueError:
+            return Response(status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = serializers.serviceSerializer(
+            data=request.data, instance=service)
+        if serializer.is_valid():
+            service = serializer.save()
+            services[service.id] = service
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def partial_update(self, request, pk=None):
+        try:
+            service = services[int(pk)]
+        except KeyError:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        except ValueError:
+            return Response(status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = serializers.serviceSerializer(
+            data=request.data,
+            instance=service,
+            partial=True)
+        if serializer.is_valid():
+            service = serializer.save()
+            services[service.id] = service
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def destroy(self, request, pk=None):
+        try:
+            service = services[int(pk)]
+        except KeyError:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        except ValueError:
+            return Response(status=status.HTTP_400_BAD_REQUEST)
+
+        del services[service.id]
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 class UpdateServiceView(views.APIView):
     tab_group_class = idm_tabs.MncaTabs
