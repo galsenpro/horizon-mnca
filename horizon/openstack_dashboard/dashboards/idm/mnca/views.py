@@ -158,7 +158,7 @@ class ServiceViewSet(viewsets.ViewSet):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    # Supprimer un idas_service 
+    # Supprimer un idas_service
     def destroy(self, request, pk=None):
         try:
             service = services[int(pk)]
