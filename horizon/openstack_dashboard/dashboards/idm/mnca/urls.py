@@ -12,10 +12,9 @@
 
 from django.conf.urls import patterns
 from django.conf.urls import url
-from .views import IndexView
+from .views import *
 from openstack_dashboard.dashboards.idm.mnca import views
 from rest_framework import routers
-from drf_demo.model_less.views import ServiceViewSet
 router = routers.DefaultRouter()
 router.register(r'services', ServiceViewSet, base_name='services')
 
@@ -23,6 +22,5 @@ urlpatterns = patterns(
     '',
     url(r'^$', views.ServicesIdasView.as_view(), name='index'),
     url(r'^mncaservices', views.ServicesIdasView.as_view(), name='mncaservices'),
-    router.urls
-
+    router.urls,
     )
