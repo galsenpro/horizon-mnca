@@ -79,7 +79,7 @@ def get_next_service_id():
     return max(services) + 1
 
 
-class serviceViewSet(viewsets.ViewSet):
+class ServiceViewSet(viewsets.ViewSet):
     # Required for the Browsable API renderer to have a nice form.
     serializer_class = serializers.serviceSerializer
 
