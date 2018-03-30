@@ -42,6 +42,7 @@ class ServicesIdasView(views.APIView):
         response = requests.get(url, headers=headers)
         """ Retourne le resultat ss forme d dictionnaire"""
         json_data = sorted(response.json().items(), key=lambda t: t[0])
+        nouvelleEntete = []
         if str((json_data[0][0])) == "count":
             #la valeur de la clé services du json_data // une liste
             liste = json_data[1][1]
@@ -74,20 +75,32 @@ class ServicesIdasView(views.APIView):
         context['result'] = allServices
         context['panel_name'] = 'MNCA'
         return context
-
+"""
+    recupère  l'id max pour un nouveau service
+"""
 def get_next_service_id():
     return max(services) + 1
 
-
+"""
+    Les services pour gérer un idas_service:
+        - Liste des idas_services
+        - Créer un nouveau idas_service
+        - Recupère un idas_service spécific
+        - Modifier un idas_service
+        - Modifier partiellement un idas_service
+        - Supprimer un idas_service 
+"""
 class ServiceViewSet(viewsets.ViewSet):
     # Required for the Browsable API renderer to have a nice form.
     serializer_class = serializers.serviceSerializer
 
+    #Liste des idas_services
     def list(self, request):
         serializer = serializers.serviceSerializer(
             instance=services.values(), many=True)
         return Response(serializer.data)
 
+    # Créer un nouveau idas_service
     def create(self, request):
         serializer = serializers.serviceSerializer(data=request.data)
         if serializer.is_valid():
@@ -97,6 +110,7 @@ class ServiceViewSet(viewsets.ViewSet):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    # Recupère un idas_service spécific
     def retrieve(self, request, pk=None):
         try:
             service = services[int(pk)]
@@ -108,6 +122,7 @@ class ServiceViewSet(viewsets.ViewSet):
         serializer = serializers.serviceSerializer(instance=service)
         return Response(serializer.data)
 
+    # Modifier un idas_service
     def update(self, request, pk=None):
         try:
             service = services[int(pk)]
@@ -124,6 +139,7 @@ class ServiceViewSet(viewsets.ViewSet):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    # Modifier partiellement un idas_service
     def partial_update(self, request, pk=None):
         try:
             service = services[int(pk)]
@@ -142,6 +158,7 @@ class ServiceViewSet(viewsets.ViewSet):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    # Supprimer un idas_service 
     def destroy(self, request, pk=None):
         try:
             service = services[int(pk)]
